@@ -28,17 +28,19 @@ Nearby spellings that are **not** this name: Ailixr, Alierix, Ailix, Aileron. No
 
 ## What this repo is
 
-A working slice plus the product contract:
+A working slice of the product contract:
 
-- Landing, playground, catalog, and docs
+- Landing, playground, **Families** page, docs, and a mock dashboard
 - `POST /api/v1/systemone` — Jev-compatible Choice / Score / Noul API
-- `POST /api/v1/route` — policy hint in, typed route out
-- `POST /api/v1/chat/completions` — OpenAI-shaped entry; use `ailerix/auto` only
+- `POST /api/v1/route` — policy hint in; Jev classifies task family; frontier walker returns `aa_id`, cost-per-task, floor, and reasons
+- `POST /api/v1/chat/completions` — OpenAI-shaped entry; only `ailerix/auto` (or omitted model) is accepted
+- `GET /api/v1/models` — single row: `ailerix/auto`
+- Checked-in Artificial Analysis fixture (`data/aa-snapshot.json`) and Pareto frontier walker (no live scrape in dev)
 - Local System One engine so the playground works without credentials
 
-The shipped router still Choice-ranks a twelve-row catalog. That path is deleted in the spec. Jev will classify **task families** only (`intelligence`, `coding`, `agents`, `vision`, `factual`, `long_context`, `professional`). Software then picks the cheapest Artificial Analysis cost-per-task point that clears Jev’s quality floor, stepping one point up the frontier when confidence is low.
+Jev classifies **task families** only (`intelligence`, `coding`, `agents`, `vision`, `factual`, `long_context`, `professional`) — never catalog model ids in routing questions. Software picks the cheapest cost-per-task frontier point that clears Jev’s quality floor, with optional next-up when confidence or gradient warrants it.
 
-If `TYPESAFE_API_KEY` is set, routing questions go to `https://api.typesafe.ai/v1/systemone`. Completions stay mocked until you add provider keys. Live AA ingest needs a Commercial license; development uses a fixture (see the plan).
+If `TYPESAFE_API_KEY` is set, routing questions go to `https://api.typesafe.ai/v1/systemone`. Completions stay mocked until you add provider keys. Live AA ingest needs a Commercial license; development uses the fixture (see the plan).
 
 ## Run locally
 

@@ -22,20 +22,27 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
+import type { TaskFamily } from "@/lib/families";
 import { ROUTING_POLICIES, type RoutingPolicy } from "@/lib/models";
-import type { Answer } from "@/lib/system-one";
+import type { Answer, SystemOneResponse } from "@/lib/system-one";
 
 type RouteResponse = {
   model: string;
+  family: TaskFamily;
+  family_confidence: number;
+  aa_id: string;
+  cost_per_task_usd: number;
+  floor: number;
+  fallback_aa_id: string;
   fallback: string;
+  next_up_used: boolean;
+  degraded: boolean;
   engine: "jev" | "ailerix-local";
   policy: RoutingPolicy;
   latency_ms: number;
   reasons: string[];
   output: string;
-  decisions: {
-    answers: Record<string, Answer>;
-  };
+  decisions: SystemOneResponse;
   error?: string;
 };
 
@@ -72,9 +79,13 @@ function policyLabel(policy: RoutingPolicy): string {
       return "Lowest latency";
     default: {
       const _exhaustive: never = policy;
-      return _exhaustive;
+      throw new Error(`Unhandled policy: ${_exhaustive}`);
     }
   }
+}
+
+function familyLabel(family: TaskFamily): string {
+  return family.replace(/_/g, " ");
 }
 
 function AnswerCard({ id, answer }: { id: string; answer: Answer }) {
@@ -133,7 +144,7 @@ function AnswerCard({ id, answer }: { id: string; answer: Answer }) {
       );
     default: {
       const _exhaustive: never = answer;
-      return _exhaustive;
+      throw new Error(`Unhandled answer type: ${_exhaustive}`);
     }
   }
 }
@@ -168,7 +179,7 @@ export function PlaygroundClient() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ prompt, policy }),
       });
-      const payload = (await response.json()) as RouteResponse;
+      const payload = (await response.json()) as RouteResponse & { error?: string };
       if (!response.ok) {
         throw new Error(payload.error ?? "Routing failed");
       }
@@ -181,14 +192,16 @@ export function PlaygroundClient() {
     }
   }
 
+  const fallbackId = result?.fallback_aa_id ?? result?.fallback;
+
   return (
     <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
       <Card>
         <CardHeader>
           <CardTitle>Request</CardTitle>
           <CardDescription>
-            Jev answers typed questions about this state, then Ailerix banks
-            the call. No text generation in the decision path.
+            Jev classifies task family and scores; software walks the
+            cost-per-task frontier. No model select — only a policy hint.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -220,7 +233,7 @@ export function PlaygroundClient() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="policy">Policy</Label>
+              <Label htmlFor="policy">Policy hint</Label>
               <Select
                 value={policy}
                 onValueChange={(value) => {
@@ -281,8 +294,8 @@ export function PlaygroundClient() {
             <CardHeader>
               <CardTitle>No route yet</CardTitle>
               <CardDescription>
-                Submit a request to see the Choice, Score, and Noul answers Jev
-                returns, then the model Ailerix banks to.
+                Submit a request to see the task family Jev chose, the frontier
+                pick (aa_id and cost-per-task), and the full typed decisions.
               </CardDescription>
             </CardHeader>
           </Card>
@@ -293,12 +306,31 @@ export function PlaygroundClient() {
             <Card>
               <CardHeader>
                 <div className="flex flex-wrap items-center gap-2">
-                  <Badge>{result.engine === "jev" ? "TypeSafe Jev" : "Local Jev"}</Badge>
+                  <Badge className="capitalize">
+                    {familyLabel(result.family)}
+                  </Badge>
+                  <Badge variant="secondary">
+                    {(result.family_confidence * 100).toFixed(0)}% family conf.
+                  </Badge>
+                  {result.next_up_used ? (
+                    <Badge variant="outline">next_up used</Badge>
+                  ) : null}
+                  {result.degraded ? (
+                    <Badge variant="destructive">degraded</Badge>
+                  ) : null}
                   <Badge variant="outline">{result.policy}</Badge>
+                  <Badge variant="secondary">
+                    {result.engine === "jev" ? "TypeSafe Jev" : "Local Jev"}
+                  </Badge>
                   <Badge variant="secondary">{result.latency_ms} ms</Badge>
                 </div>
                 <CardTitle className="font-mono text-base">{result.model}</CardTitle>
-                <CardDescription>Fallback {result.fallback}</CardDescription>
+                <CardDescription>
+                  Quality floor {result.floor.toFixed(1)} · Frontier pick{" "}
+                  <span className="font-mono text-foreground">{result.aa_id}</span>{" "}
+                  at ${result.cost_per_task_usd.toFixed(4)}/task · Fallback{" "}
+                  <span className="font-mono text-foreground">{fallbackId}</span>
+                </CardDescription>
               </CardHeader>
               <CardContent className="space-y-2 text-sm text-muted-foreground">
                 {result.reasons.map((reason) => (
@@ -311,12 +343,20 @@ export function PlaygroundClient() {
                 <AnswerCard key={id} id={id} answer={answer} />
               ))}
             </div>
+            <details className="rounded-lg border border-border bg-card px-4 py-3">
+              <summary className="cursor-pointer text-sm font-medium">
+                Raw decisions JSON
+              </summary>
+              <pre className="mt-3 max-h-80 overflow-auto font-mono text-xs leading-6 text-muted-foreground">
+                {JSON.stringify(result.decisions, null, 2)}
+              </pre>
+            </details>
             <Card>
               <CardHeader>
                 <CardTitle>Mock completion</CardTitle>
                 <CardDescription>
-                  The decision is real. The string below is only a stand-in so
-                  the playground works without provider keys.
+                  The route is real. The string below is only a stand-in so the
+                  playground works without provider keys.
                 </CardDescription>
               </CardHeader>
               <CardContent>

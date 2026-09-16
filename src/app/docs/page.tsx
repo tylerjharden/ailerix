@@ -6,12 +6,14 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { FAMILY_DESCRIPTIONS, TASK_FAMILIES } from "@/lib/families";
 
 const ENDPOINTS = [
   {
     method: "POST",
     path: "/api/v1/route",
-    body: "Jev-powered route. Send { prompt, policy }. Get model, fallback, decisions, mock output.",
+    body:
+      "Jev + frontier walk. Send { prompt, policy? }. Returns family, aa_id, cost_per_task_usd, floor, fallback_aa_id, decisions, mock output. model is always ailerix/auto.",
   },
   {
     method: "POST",
@@ -21,14 +23,20 @@ const ENDPOINTS = [
   {
     method: "POST",
     path: "/api/v1/chat/completions",
-    body: "OpenAI-shaped chat. Use model ailerix/auto to let Jev pick.",
+    body:
+      "OpenAI-shaped chat. model must be omitted or ailerix/auto; any other slug returns 400 model_not_allowed.",
   },
   {
     method: "GET",
     path: "/api/v1/models",
-    body: "Catalog with pricing, latency, and capabilities.",
+    body:
+      "Returns only ailerix/auto — the sole public model id. No provider catalog.",
   },
 ] as const;
+
+const familyCriteriaExample = Object.fromEntries(
+  TASK_FAMILIES.map((family) => [family, FAMILY_DESCRIPTIONS[family]]),
+);
 
 export default function DocsPage() {
   return (
@@ -37,7 +45,7 @@ export default function DocsPage() {
         <h1 className="text-3xl font-medium tracking-tight">Docs</h1>
         <p className="text-muted-foreground">
           Ailerix speaks two contracts: OpenRouter-style chat, and TypeSafe
-          System One. The second one is the product.
+          System One. Jev classifies task families; software walks the frontier.
         </p>
       </div>
 
@@ -57,43 +65,74 @@ export default function DocsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>TypeScript: ask Jev, then switch</CardTitle>
+          <CardTitle>TypeScript: routing questions (task family)</CardTitle>
+          <CardDescription>
+            Production routing uses nine questions — one Choice over families, three
+            Scores, five Nouls. No catalog ids in criteria.
+          </CardDescription>
         </CardHeader>
         <CardContent>
-          <pre className="overflow-x-auto font-mono text-xs leading-6 text-muted-foreground">{`const response = await fetch("/api/v1/systemone", {
+          <pre className="overflow-x-auto font-mono text-xs leading-6 text-muted-foreground">{`const familyCriteria = ${JSON.stringify(familyCriteriaExample, null, 2)};
+
+const response = await fetch("/api/v1/systemone", {
   method: "POST",
   headers: { "Content-Type": "application/json" },
   body: JSON.stringify({
     state: "Refund this double charge before payroll.",
     model: "jev-latest",
     questions: {
-      model: {
+      task_family: {
         type: "choice",
-        instructions: "Which catalog model should handle this?",
-        criteria: {
-          "anthropic/claude-haiku-4.5": "Fast support routing",
-          "openai/gpt-5-mini": "Cheap default",
-        },
+        instructions:
+          "Classify the user's request into exactly one task family.",
+        criteria: familyCriteria,
       },
-      urgent: { type: "noul", instructions: "Is this time-sensitive?" },
+      quality_floor: {
+        type: "score",
+        instructions: "How much model quality does this task need?",
+        legend: [
+          "Trivial rewrite or lookup",
+          "Standard production task",
+          "Hard multi-step reasoning",
+          "Frontier-only work",
+        ],
+      },
+      hallucination_sensitive: {
+        type: "noul",
+        instructions:
+          "Would a confident falsehood be expensive here?",
+      },
     },
   }),
 });
 
 const { answers } = await response.json();
+console.log(answers.task_family.choice, answers.task_family.confidence);`}</pre>
+        </CardContent>
+      </Card>
 
-switch (answers.model.type) {
-  case "choice":
-    console.log(answers.model.choice, answers.model.confidence);
-    break;
-  case "score":
-  case "noul":
-    throw new Error("model must be a Choice");
-  default: {
-    const _exhaustive: never = answers.model;
-    throw new Error(\`Unhandled \${_exhaustive}\`);
-  }
-}`}</pre>
+      <Card>
+        <CardHeader>
+          <CardTitle>Chat completions: ailerix/auto only</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <pre className="overflow-x-auto font-mono text-xs leading-6 text-muted-foreground">{`const response = await fetch("/api/v1/chat/completions", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    model: "ailerix/auto",
+    messages: [{ role: "user", content: "Summarize this ticket." }],
+    policy: "balanced",
+  }),
+});
+
+// Omitting model is also accepted.
+// Any other model slug → 400 { code: "model_not_allowed" }
+// Body fields models, provider, plugins, preset → 400 parameter_not_allowed
+
+const body = await response.json();
+console.log(body.model); // "ailerix/auto"
+console.log(body.ailerix?.family, body.ailerix?.cost_per_task_usd);`}</pre>
         </CardContent>
       </Card>
 

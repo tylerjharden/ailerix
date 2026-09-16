@@ -1,9 +1,14 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import {
   Table,
   TableBody,
@@ -13,134 +18,181 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
-  CATALOG,
-  formatUsd,
-  isModelCapability,
-  type ModelCapability,
-} from "@/lib/models";
+  FAMILY_DESCRIPTIONS,
+  TASK_FAMILIES,
+  type TaskFamily,
+} from "@/lib/families";
+import type { AaSnapshot } from "@/lib/aa/types";
 
-const FILTERS = ["all", ...new Set(CATALOG.flatMap((model) => model.capabilities))] as const;
+function formatFamilyTitle(family: TaskFamily): string {
+  return family.replace(/_/g, " ");
+}
 
 export function ModelCatalog() {
-  const [query, setQuery] = useState("");
-  const [filter, setFilter] = useState<(typeof FILTERS)[number]>("all");
+  const showOperator = process.env.NODE_ENV !== "production";
+  const [snapshot, setSnapshot] = useState<AaSnapshot | null>(null);
+  const [catalogError, setCatalogError] = useState<string | null>(null);
 
-  const rows = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    return CATALOG.filter((model) => {
-      const matchesQuery =
-        needle.length === 0 ||
-        `${model.id} ${model.name} ${model.provider} ${model.summary}`
-          .toLowerCase()
-          .includes(needle);
-      const matchesFilter =
-        filter === "all" ||
-        (isModelCapability(filter) && model.capabilities.includes(filter));
-      return matchesQuery && matchesFilter;
-    });
-  }, [filter, query]);
+  useEffect(() => {
+    if (!showOperator) {
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const response = await fetch("/api/v1/internal/catalog");
+        if (!response.ok) {
+          throw new Error("Catalog unavailable");
+        }
+        const data = (await response.json()) as AaSnapshot;
+        if (!cancelled) {
+          setSnapshot(data);
+        }
+      } catch {
+        if (!cancelled) {
+          setCatalogError("Could not load fixture snapshot.");
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [showOperator]);
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <Input
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder="Search models or providers"
-          className="sm:max-w-sm"
-        />
-        <div className="flex flex-wrap gap-2">
-          {FILTERS.map((item) => (
-            <button
-              key={item}
-              type="button"
-              onClick={() => setFilter(item)}
-              className="rounded-full"
-            >
-              <Badge variant={filter === item ? "default" : "outline"}>
-                {item}
-              </Badge>
-            </button>
-          ))}
-        </div>
+    <div className="space-y-10">
+      <Card>
+        <CardHeader>
+          <CardTitle>How the frontier walk works</CardTitle>
+          <CardDescription>
+            Software — not Jev — picks a model row from the checked-in
+            Artificial Analysis snapshot.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3 text-sm text-muted-foreground">
+          <p>
+            Jev’s <code className="font-mono text-foreground">quality_floor</code>{" "}
+            score maps to a percentile band over eligible models in the chosen
+            family. The walker builds a cost-per-task Pareto frontier, selects
+            the cheapest point at or above that floor, and may{" "}
+            <strong className="font-medium text-foreground">next up</strong> one
+            step when family or floor confidence is low, or when cost sensitivity
+            and gradient favor a slightly pricier point.
+          </p>
+          <p>
+            Eligibility filters vision, tools, code, and context from Jev’s
+            nouls. A fallback aa_id is the next point on the frontier; degraded
+            paths are flagged when no model clears the floor.
+          </p>
+        </CardContent>
+      </Card>
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        {TASK_FAMILIES.map((family) => (
+          <Card key={family} size="sm">
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <Badge variant="secondary" className="capitalize">
+                  {formatFamilyTitle(family)}
+                </Badge>
+              </div>
+              <CardTitle className="font-mono text-sm">{family}</CardTitle>
+            </CardHeader>
+            <CardContent className="text-sm text-muted-foreground">
+              {FAMILY_DESCRIPTIONS[family]}
+            </CardContent>
+          </Card>
+        ))}
       </div>
 
-      {rows.length === 0 ? (
-        <Card className="border-dashed">
-          <CardHeader>
-            <CardTitle>No models match</CardTitle>
-          </CardHeader>
-          <CardContent className="text-sm text-muted-foreground">
-            Clear the search or pick another capability. Echo Local is always
-            available as a fallback.
-          </CardContent>
-        </Card>
-      ) : (
-        <>
-          <div className="hidden md:block">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Model</TableHead>
-                  <TableHead>Context</TableHead>
-                  <TableHead>Input / MTok</TableHead>
-                  <TableHead>Latency</TableHead>
-                  <TableHead>Capabilities</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {rows.map((model) => (
-                  <TableRow key={model.id}>
-                    <TableCell>
-                      <div className="font-medium">{model.name}</div>
-                      <div className="font-mono text-xs text-muted-foreground">
-                        {model.id}
-                      </div>
-                    </TableCell>
-                    <TableCell>{model.context.toLocaleString()}</TableCell>
-                    <TableCell>{formatUsd(model.inputPerMTok)}</TableCell>
-                    <TableCell>{model.latencyMs} ms</TableCell>
-                    <TableCell>
-                      <div className="flex flex-wrap gap-1">
-                        {model.capabilities.map((capability: ModelCapability) => (
-                          <Badge key={capability} variant="secondary">
-                            {capability}
-                          </Badge>
-                        ))}
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+      {showOperator ? (
+        <div className="space-y-3">
+          <div>
+            <h2 className="text-lg font-medium tracking-tight">
+              Fixture snapshot (operator view)
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              Development only — rows from{" "}
+              <code className="font-mono text-foreground">data/aa-snapshot.json</code>
+              . Not shown in production builds.
+            </p>
           </div>
-          <div className="grid gap-3 md:hidden">
-            {rows.map((model) => (
-              <Card key={model.id} size="sm">
-                <CardHeader>
-                  <CardTitle>{model.name}</CardTitle>
-                  <p className="font-mono text-xs text-muted-foreground">
-                    {model.id}
-                  </p>
-                </CardHeader>
-                <CardContent className="space-y-2 text-sm text-muted-foreground">
-                  <p>{model.summary}</p>
-                  <p>
-                    {formatUsd(model.inputPerMTok)} / MTok · {model.latencyMs} ms
-                  </p>
-                  <div className="flex flex-wrap gap-1">
-                    {model.capabilities.map((capability) => (
-                      <Badge key={capability} variant="secondary">
-                        {capability}
-                      </Badge>
+          {catalogError ? (
+            <Card className="border-dashed">
+              <CardContent className="py-6 text-sm text-muted-foreground">
+                {catalogError}
+              </CardContent>
+            </Card>
+          ) : null}
+          {snapshot ? (
+            <>
+              <div className="hidden overflow-x-auto md:block">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>aa_id</TableHead>
+                      <TableHead>Name</TableHead>
+                      <TableHead>Index</TableHead>
+                      <TableHead>Intel $/task</TableHead>
+                      <TableHead>Context</TableHead>
+                      <TableHead>Capabilities</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {snapshot.models.map((model) => (
+                      <TableRow key={model.aa_id}>
+                        <TableCell className="font-mono text-xs">
+                          {model.aa_id}
+                        </TableCell>
+                        <TableCell>{model.name}</TableCell>
+                        <TableCell>{model.intelligence_index}</TableCell>
+                        <TableCell>
+                          ${model.cost_per_task_usd.intelligence.toFixed(3)}
+                        </TableCell>
+                        <TableCell>
+                          {model.context_window.toLocaleString()}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex flex-wrap gap-1">
+                            {model.capabilities.vision ? (
+                              <Badge variant="outline">vision</Badge>
+                            ) : null}
+                            {model.capabilities.tools ? (
+                              <Badge variant="outline">tools</Badge>
+                            ) : null}
+                            {model.capabilities.code ? (
+                              <Badge variant="outline">code</Badge>
+                            ) : null}
+                          </div>
+                        </TableCell>
+                      </TableRow>
                     ))}
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        </>
-      )}
+                  </TableBody>
+                </Table>
+              </div>
+              <div className="grid gap-3 md:hidden">
+                {snapshot.models.map((model) => (
+                  <Card key={model.aa_id} size="sm">
+                    <CardHeader>
+                      <CardTitle className="font-mono text-sm">
+                        {model.aa_id}
+                      </CardTitle>
+                      <CardDescription>{model.name}</CardDescription>
+                    </CardHeader>
+                    <CardContent className="text-sm text-muted-foreground">
+                      Index {model.intelligence_index} · $
+                      {model.cost_per_task_usd.intelligence.toFixed(3)}/task
+                      intel · {model.context_window.toLocaleString()} ctx
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </>
+          ) : !catalogError ? (
+            <p className="text-sm text-muted-foreground">Loading snapshot…</p>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }

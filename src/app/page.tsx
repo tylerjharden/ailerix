@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowRight, Gauge, GitBranch, ShieldCheck } from "lucide-react";
+import { ArrowRight, GitBranch, Layers, Sparkles } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -12,16 +12,19 @@ import {
 
 const STEPS = [
   {
-    title: "Send state, not a model id",
-    body: "A ticket, a prompt, or program state. You do not pick Claude or GPT first.",
+    title: "Jev classifies the task",
+    body:
+      "TypeSafe Jev answers Choice, Score, and Noul questions — including which task family fits. No catalog ids in the criteria. No model names in the output.",
   },
   {
-    title: "Jev answers typed questions",
-    body: "Choice, Score, and Noul in one call. Parallel decisions, calibrated probabilities, no generated prose.",
+    title: "Software walks the cost-per-task frontier",
+    body:
+      "Ailerix maps Jev’s quality floor onto an Artificial Analysis Pareto chain, picks the cheapest point that clears it, and steps one notch up when confidence is low.",
   },
   {
-    title: "Ailerix banks the request",
-    body: "Software switches on those values, then calls the winning provider. Fallback is already chosen.",
+    title: "You never name a model",
+    body:
+      "The only public slug is ailerix/auto. Frontier picks use internal aa_id values; provider routing stays behind the API.",
   },
 ] as const;
 
@@ -30,17 +33,19 @@ export default function HomePage() {
     <div>
       <section className="mx-auto flex w-full max-w-6xl flex-col gap-8 px-4 py-14 sm:px-6 sm:py-20">
         <div className="flex flex-wrap gap-2">
-          <Badge variant="secondary">System One routing</Badge>
+          <Badge variant="secondary">Task families + AA frontier</Badge>
           <Badge variant="outline">OpenAI-compatible API</Badge>
         </div>
         <div className="max-w-3xl space-y-5">
           <h1 className="text-4xl font-medium tracking-tight sm:text-5xl">
-            OpenRouter lists every model. Ailerix decides which one to call.
+            Jev classifies. Software walks the frontier. You send{" "}
+            <code className="font-mono text-[0.9em]">ailerix/auto</code>.
           </h1>
           <p className="max-w-2xl text-lg leading-8 text-muted-foreground">
-            Ailerix is a type-safe model router powered by TypeSafe Jev, the
-            first System One model. Jev does not chat. It returns a Choice, a
-            Score, or a Noul — values your code can branch on in 70–500ms.
+            Ailerix is a type-safe router powered by TypeSafe Jev. Jev does not
+            chat — it returns typed decisions in milliseconds. Your code (and
+            our frontier walker) turns those values into a cost-per-task pick
+            along the Artificial Analysis snapshot.
           </p>
           <div className="flex flex-col gap-3 sm:flex-row">
             <Button asChild>
@@ -60,33 +65,36 @@ export default function HomePage() {
         <div className="mx-auto grid w-full max-w-6xl gap-4 px-4 py-10 sm:grid-cols-3 sm:px-6">
           <Card size="sm">
             <CardHeader>
-              <Gauge className="size-4 text-primary" />
-              <CardTitle>Decision, not a string</CardTitle>
+              <Sparkles className="size-4 text-primary" />
+              <CardTitle>Seven task families</CardTitle>
             </CardHeader>
             <CardContent className="text-sm text-muted-foreground">
-              OpenRouter still leaves model selection to you or to a chat
-              model. Ailerix asks Jev questions whose answers cannot leave the
-              schema you defined.
+              Intelligence, coding, agents, vision, factual, long context, and
+              professional — Jev picks exactly one. Brand names in the prompt
+              are capability hints, not model selections.
             </CardContent>
           </Card>
           <Card size="sm">
             <CardHeader>
-              <ShieldCheck className="size-4 text-primary" />
-              <CardTitle>Calibrated confidence</CardTitle>
+              <Layers className="size-4 text-primary" />
+              <CardTitle>Pareto cost-per-task</CardTitle>
             </CardHeader>
             <CardContent className="text-sm text-muted-foreground">
-              Act when confidence is high. Escalate when it is not. Thresholds
-              live in your repo, not inside a prompt.
+              Per family, models sit on a quality–cost frontier. Software
+              applies Jev’s floor, chooses the cheapest clearing point, and can
+              next-up when confidence or gradient says so.
             </CardContent>
           </Card>
           <Card size="sm">
             <CardHeader>
               <GitBranch className="size-4 text-primary" />
-              <CardTitle>Typed fallbacks</CardTitle>
+              <CardTitle>One public model id</CardTitle>
             </CardHeader>
             <CardContent className="text-sm text-muted-foreground">
-              Every route includes a fallback model, a policy, and the full
-              probability distribution Jev returned.
+              Chat and route endpoints accept only{" "}
+              <code className="font-mono text-foreground">ailerix/auto</code>.
+              Fallback aa_id is chosen on the same frontier — still no provider
+              slug in the default response.
             </CardContent>
           </Card>
         </div>
