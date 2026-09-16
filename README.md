@@ -1,9 +1,11 @@
 # Ailerix
 
-Type-safe model router. An OpenRouter competitor that uses TypeSafe Jev (System One) to bank each request to a typed route — model, fallback, policy — instead of asking you (or a chat model) to pick a string.
+Type-safe model router. An OpenRouter competitor that uses TypeSafe Jev (System One) to classify every request, then walks an [Artificial Analysis](https://artificialanalysis.ai) cost-per-task Pareto chain to bank a provider. You never name a model. The only public slug is `ailerix/auto`.
 
 - Site: [ailerix.com](https://ailerix.com)
 - Source: [github.com/tylerjharden/ailerix](https://github.com/tylerjharden/ailerix)
+- Product spec: [docs/SPEC.md](./docs/SPEC.md)
+- Implementation plan: [docs/PLAN.md](./docs/PLAN.md)
 
 An aileron banks an aircraft. Ailerix banks a request.
 
@@ -26,15 +28,17 @@ Nearby spellings that are **not** this name: Ailixr, Alierix, Ailix, Aileron. No
 
 ## What this repo is
 
-A working slice:
+A working slice plus the product contract:
 
 - Landing, playground, catalog, and docs
 - `POST /api/v1/systemone` — Jev-compatible Choice / Score / Noul API
-- `POST /api/v1/route` — policy in, typed route out
-- `POST /api/v1/chat/completions` — OpenAI-shaped entry with `ailerix/auto`
+- `POST /api/v1/route` — policy hint in, typed route out
+- `POST /api/v1/chat/completions` — OpenAI-shaped entry; use `ailerix/auto` only
 - Local System One engine so the playground works without credentials
 
-If `TYPESAFE_API_KEY` is set, routing questions go to `https://api.typesafe.ai/v1/systemone`. Completions stay mocked until you add provider keys.
+The shipped router still Choice-ranks a twelve-row catalog. That path is deleted in the spec. Jev will classify **task families** only (`intelligence`, `coding`, `agents`, `vision`, `factual`, `long_context`, `professional`). Software then picks the cheapest Artificial Analysis cost-per-task point that clears Jev’s quality floor, stepping one point up the frontier when confidence is low.
+
+If `TYPESAFE_API_KEY` is set, routing questions go to `https://api.typesafe.ai/v1/systemone`. Completions stay mocked until you add provider keys. Live AA ingest needs a Commercial license; development uses a fixture (see the plan).
 
 ## Run locally
 
