@@ -94,6 +94,11 @@ export type PromptSignals = {
   isSimple: boolean;
   mentionsCost: boolean;
   mentionsSpeed: boolean;
+  isAgents: boolean;
+  isFactual: boolean;
+  isProfessional: boolean;
+  wantsFrontierQuality: boolean;
+  isHallucinationSensitive: boolean;
 };
 
 export function analyzePrompt(state: SystemOneState): PromptSignals {
@@ -114,6 +119,27 @@ export function analyzePrompt(state: SystemOneState): PromptSignals {
   const mentionsSpeed = /fast|latency|realtime|real-time|low latency/.test(
     lower,
   );
+  const isAgents =
+    /\b(browse|search the web|multi-step|book a|schedule|automate|api call)\b/.test(
+      lower,
+    );
+  const isFactual =
+    /\b(cite|source|when did|who is|statistic)\b/.test(lower);
+  const isProfessional =
+    /\b(legal|medical|contract|compliance|diagnos|tax|refund|payroll|invoice|charge)\b/.test(
+      lower,
+    );
+  const wantsFrontierQuality =
+    /\b(frontier|hardest)\b/.test(lower) ||
+    /\bmulti-step\b/.test(lower) ||
+    (text.length > 6000 && !isSimple);
+  const isHallucinationSensitive =
+    isFactual ||
+    isProfessional ||
+    /\b(citation|falsehood|accurate|verify|liability|dosage|prescription)\b/.test(
+      lower,
+    ) ||
+    /\$\d|money|financial/.test(lower);
 
   return {
     text,
@@ -125,7 +151,88 @@ export function analyzePrompt(state: SystemOneState): PromptSignals {
     isSimple,
     mentionsCost,
     mentionsSpeed,
+    isAgents,
+    isFactual,
+    isProfessional,
+    wantsFrontierQuality,
+    isHallucinationSensitive,
   };
+}
+
+function isTaskFamilyChoice(criteria: Record<string, string>): boolean {
+  const keys = Object.keys(criteria);
+  if (keys.length !== TASK_FAMILIES.length) {
+    return false;
+  }
+  return TASK_FAMILIES.every((family) => family in criteria);
+}
+
+function scoreQuestionKind(question: ScoreQuestion): "quality" | "cost" | "latency" | "generic" {
+  const blob = question.criteria.join(" ").toLowerCase();
+  if (blob.includes("trivial rewrite") || blob.includes("frontier-only")) {
+    return "quality";
+  }
+  if (blob.includes("indifferent to spend") || blob.includes("minimize dollars")) {
+    return "cost";
+  }
+  if (blob.includes("batch is fine") || blob.includes("hard real-time")) {
+    return "latency";
+  }
+  return "generic";
+}
+
+function applyPolicyScoreBias(
+  score: number,
+  instructions: string,
+  kind: "quality" | "cost" | "latency" | "generic",
+): number {
+  const lower = instructions.toLowerCase();
+  const preferLower = /prefer the lower level/.test(lower);
+  const preferHigher = /prefer the higher level/.test(lower);
+  if (!preferLower && !preferHigher) {
+    return score;
+  }
+  const delta = 0.35;
+  if (kind === "quality" || kind === "latency") {
+    if (preferLower) return score - delta;
+    if (preferHigher) return score + delta;
+  }
+  if (kind === "cost") {
+    if (preferLower) return score - delta;
+    if (preferHigher) return score + delta;
+  }
+  return score;
+}
+
+function taskFamilyWeights(
+  signals: PromptSignals,
+  criteria: Record<string, string>,
+): Record<string, number> {
+  const weights: Record<string, number> = Object.fromEntries(
+    TASK_FAMILIES.map((family) => [family, 0.08]),
+  );
+  weights.intelligence = 1.1;
+
+  if (signals.isCode) weights.coding += 2.8;
+  if (signals.isVision) weights.vision += 2.9;
+  if (signals.isLong) weights.long_context += 2.4;
+  if (signals.isAgents) weights.agents += 2.5;
+  if (signals.isFactual) weights.factual += 2.3;
+  if (signals.isProfessional) weights.professional += 2.2;
+
+  if (
+    !signals.isCode &&
+    !signals.isVision &&
+    !signals.isLong &&
+    !signals.isAgents &&
+    !signals.isFactual &&
+    !signals.isProfessional
+  ) {
+    weights.intelligence += 1.4;
+  }
+
+  const keys = Object.keys(criteria);
+  return Object.fromEntries(keys.map((key) => [key, weights[key] ?? 0.05]));
 }
 
 function answerQuestion(question: Question, signals: PromptSignals): Answer {
@@ -136,51 +243,63 @@ function answerQuestion(question: Question, signals: PromptSignals): Answer {
         throw new Error("Choice questions need at least one criterion.");
       }
 
-      const instructions = question.instructions.toLowerCase();
-      const wantsCheap = /cheap|minimize spend/.test(instructions);
-      const wantsFast = /latency|lowest latency/.test(instructions);
-      const wantsQuality = /quality|highest quality|frontier/.test(instructions);
+      let weightByKey: Record<string, number>;
+      if (isTaskFamilyChoice(question.criteria)) {
+        weightByKey = taskFamilyWeights(signals, question.criteria);
+      } else {
+        const instructions = question.instructions.toLowerCase();
+        const wantsCheap = /cheap|minimize spend/.test(instructions);
+        const wantsFast = /latency|lowest latency/.test(instructions);
+        const wantsQuality = /quality|highest quality|frontier/.test(instructions);
 
-      const weights = keys.map((key) => {
-        const haystack = `${key} ${question.criteria[key]}`.toLowerCase();
-        let score = 0.35;
-        if (signals.isCode && /code|coder|qwen|deepseek/.test(haystack)) {
-          score += 1.4;
-        }
-        if (signals.isVision && /vision|gemini|flash|multimodal/.test(haystack)) {
-          score += 1.3;
-        }
-        if (signals.isLong && /long|terra|fable|gemini/.test(haystack)) {
-          score += 0.9;
-        }
-        if (signals.isSimple && /mini|haiku|flash|echo|cheap/.test(haystack)) {
-          score += 1.2;
-        }
-        if (
-          (signals.mentionsCost || wantsCheap) &&
-          /cheap|mini|flash|deepseek|llama|echo|qwen|haiku/.test(haystack)
-        ) {
-          score += 1.6;
-        }
-        if (
-          (signals.mentionsSpeed || wantsFast) &&
-          /flash|haiku|mini|echo|latency/.test(haystack)
-        ) {
-          score += 1.6;
-        }
-        if (wantsQuality && /terra|fable|quality|frontier/.test(haystack)) {
-          score += 1.8;
-        } else if (!signals.isSimple && !wantsCheap && /terra|fable|quality|frontier/.test(haystack)) {
-          score += 0.7;
-        }
-        if (wantsCheap && /terra|fable|large|grok/.test(haystack)) {
-          score -= 1.2;
-        }
-        return Math.max(score, 0.05);
-      });
+        weightByKey = Object.fromEntries(
+          keys.map((key) => {
+            const haystack = `${key} ${question.criteria[key]}`.toLowerCase();
+            let score = 0.35;
+            if (signals.isCode && /code|program|repository/.test(haystack)) {
+              score += 1.4;
+            }
+            if (signals.isVision && /vision|image|multimodal|screenshot/.test(haystack)) {
+              score += 1.3;
+            }
+            if (signals.isLong && /long|context|document/.test(haystack)) {
+              score += 0.9;
+            }
+            if (signals.isSimple && /small|cheap|light|mini/.test(haystack)) {
+              score += 1.2;
+            }
+            if (
+              (signals.mentionsCost || wantsCheap) &&
+              /cheap|budget|economy|low cost/.test(haystack)
+            ) {
+              score += 1.6;
+            }
+            if (
+              (signals.mentionsSpeed || wantsFast) &&
+              /fast|speed|latency|quick/.test(haystack)
+            ) {
+              score += 1.6;
+            }
+            if (wantsQuality && /quality|frontier|best|top/.test(haystack)) {
+              score += 1.8;
+            } else if (
+              !signals.isSimple &&
+              !wantsCheap &&
+              /quality|frontier|best|top/.test(haystack)
+            ) {
+              score += 0.7;
+            }
+            if (wantsCheap && /large|premium|frontier/.test(haystack)) {
+              score -= 1.2;
+            }
+            return [key, Math.max(score, 0.05)];
+          }),
+        );
+      }
 
+      const weightList = keys.map((key) => weightByKey[key]);
       const probabilities = Object.fromEntries(
-        keys.map((key, index) => [key, Number(normalize(weights)[index].toFixed(4))]),
+        keys.map((key, index) => [key, Number(normalize(weightList)[index].toFixed(4))]),
       );
       const choice = keys.reduce((best, key) =>
         probabilities[key] > probabilities[best] ? key : best,
@@ -200,20 +319,44 @@ function answerQuestion(question: Question, signals: PromptSignals): Answer {
       }
 
       const levels = question.criteria.length;
+      const kind = scoreQuestionKind(question);
       const raw = question.criteria.map((_, index) => {
         const position = index / Math.max(levels - 1, 1);
-        let weight = 0.4;
-        if (signals.isSimple) weight += (1 - position) * 1.6;
-        else if (signals.isCode || signals.isLong) weight += position * 1.5;
-        else weight += (1 - Math.abs(position - 0.45)) * 1.2;
-        if (signals.isUrgent) weight += position * 0.4;
+        let weight = 0.35;
+
+        if (kind === "quality") {
+          if (signals.isSimple) {
+            weight += (1 - position) * 1.8;
+          } else if (signals.wantsFrontierQuality) {
+            weight += position * 2.1;
+          } else if (signals.isCode || signals.isLong) {
+            weight += 0.55 + position * 1.35;
+          } else {
+            weight += (1 - Math.abs(position - 0.42)) * 1.1;
+          }
+          if (signals.isUrgent && position > 0.4) {
+            weight += 0.35;
+          }
+        } else if (kind === "cost") {
+          weight += signals.mentionsCost ? position * 1.9 : (1 - position) * 0.5 + 0.4;
+        } else if (kind === "latency") {
+          const latencyDrive = signals.mentionsSpeed || signals.isUrgent;
+          weight += latencyDrive ? position * 1.85 : (1 - position) * 0.45 + 0.35;
+        } else {
+          if (signals.isSimple) weight += (1 - position) * 1.6;
+          else if (signals.isCode || signals.isLong) weight += position * 1.5;
+          else weight += (1 - Math.abs(position - 0.45)) * 1.2;
+          if (signals.isUrgent) weight += position * 0.4;
+        }
         return weight;
       });
       const probabilities = normalize(raw).map((value) => Number(value.toFixed(4)));
-      const score = probabilities.reduce(
+      let score = probabilities.reduce(
         (sum, probability, index) => sum + probability * index,
         0,
       );
+      score = applyPolicyScoreBias(score, question.instructions, kind);
+      score = Math.min(levels - 1, Math.max(0, score));
       const peak = Math.max(...probabilities);
 
       return {
@@ -229,14 +372,18 @@ function answerQuestion(question: Question, signals: PromptSignals): Answer {
       let noul = 0.18;
       if (/vision|image|screenshot/.test(instructions)) {
         noul = signals.isVision ? 0.93 : 0.08;
-      } else if (/tool|function call|agent/.test(instructions)) {
-        noul = signals.isCode || /api|tool|browser/.test(signals.text.toLowerCase())
-          ? 0.78
-          : 0.22;
-      } else if (/code|programming/.test(instructions)) {
+      } else if (/tool|function call/.test(instructions)) {
+        noul =
+          signals.isAgents ||
+          /api|tool|browser|function/.test(signals.text.toLowerCase())
+            ? 0.78
+            : 0.22;
+      } else if (/programming|repository/.test(instructions) || /primarily a programming/.test(instructions)) {
         noul = signals.isCode ? 0.91 : 0.12;
-      } else if (/urgent|time-sensitiv/.test(instructions)) {
-        noul = signals.isUrgent ? 0.94 : 0.16;
+      } else if (/falsehood|hallucination|citations|legal|medical|money/.test(instructions)) {
+        noul = signals.isHallucinationSensitive ? 0.86 : 0.14;
+      } else if (/long document|many files|long context/.test(instructions)) {
+        noul = signals.isLong ? 0.88 : 0.14;
       } else if (/long|document|context/.test(instructions)) {
         noul = signals.isLong ? 0.88 : 0.14;
       }
