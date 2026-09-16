@@ -2,6 +2,9 @@
 
 Type-safe model router. An OpenRouter competitor that uses TypeSafe Jev (System One) to bank each request to a typed route — model, fallback, policy — instead of asking you (or a chat model) to pick a string.
 
+- Site: [ailerix.com](https://ailerix.com)
+- Source: [github.com/tylerjharden/ailerix](https://github.com/tylerjharden/ailerix)
+
 An aileron banks an aircraft. Ailerix banks a request.
 
 ## Name and domain

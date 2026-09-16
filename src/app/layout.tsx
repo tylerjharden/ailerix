@@ -16,6 +16,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://ailerix.com"),
   title: "Ailerix — Jev-powered model router",
   description:
     "Type-safe OpenRouter competitor. TypeSafe Jev (System One) banks each request to a typed model route.",
