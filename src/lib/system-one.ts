@@ -135,6 +135,11 @@ function answerQuestion(question: Question, signals: PromptSignals): Answer {
         throw new Error("Choice questions need at least one criterion.");
       }
 
+      const instructions = question.instructions.toLowerCase();
+      const wantsCheap = /cheap|minimize spend/.test(instructions);
+      const wantsFast = /latency|lowest latency/.test(instructions);
+      const wantsQuality = /quality|highest quality|frontier/.test(instructions);
+
       const weights = keys.map((key) => {
         const haystack = `${key} ${question.criteria[key]}`.toLowerCase();
         let score = 0.35;
@@ -150,16 +155,27 @@ function answerQuestion(question: Question, signals: PromptSignals): Answer {
         if (signals.isSimple && /mini|haiku|flash|echo|cheap/.test(haystack)) {
           score += 1.2;
         }
-        if (signals.mentionsCost && /cheap|mini|flash|deepseek|llama|echo/.test(haystack)) {
-          score += 1.1;
+        if (
+          (signals.mentionsCost || wantsCheap) &&
+          /cheap|mini|flash|deepseek|llama|echo|qwen|haiku/.test(haystack)
+        ) {
+          score += 1.6;
         }
-        if (signals.mentionsSpeed && /flash|haiku|mini|echo|latency/.test(haystack)) {
-          score += 1.1;
+        if (
+          (signals.mentionsSpeed || wantsFast) &&
+          /flash|haiku|mini|echo|latency/.test(haystack)
+        ) {
+          score += 1.6;
         }
-        if (!signals.isSimple && /terra|fable|quality|frontier/.test(haystack)) {
+        if (wantsQuality && /terra|fable|quality|frontier/.test(haystack)) {
+          score += 1.8;
+        } else if (!signals.isSimple && !wantsCheap && /terra|fable|quality|frontier/.test(haystack)) {
           score += 0.7;
         }
-        return score;
+        if (wantsCheap && /terra|fable|large|grok/.test(haystack)) {
+          score -= 1.2;
+        }
+        return Math.max(score, 0.05);
       });
 
       const probabilities = Object.fromEntries(
