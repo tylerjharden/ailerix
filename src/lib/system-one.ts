@@ -1,4 +1,5 @@
-import { CATALOG, type RoutingPolicy } from "@/lib/models";
+import { FAMILY_DESCRIPTIONS, TASK_FAMILIES } from "@/lib/families";
+import type { RoutingPolicy } from "@/lib/models";
 
 export const SYSTEM_ONE_MODELS = ["jev-latest"] as const;
 export type SystemOneModel = (typeof SYSTEM_ONE_MODELS)[number];
@@ -315,43 +316,129 @@ export async function evaluateSystemOne(
   };
 }
 
+function policyScoreHints(policy: RoutingPolicy): {
+  qualityFloor: string;
+  costSensitivity: string;
+  latencySensitivity: string;
+} {
+  switch (policy) {
+    case "cheap":
+      return {
+        qualityFloor:
+          "The caller prefers lower spend; when uncertain between adjacent levels, prefer the lower level.",
+        costSensitivity:
+          "The caller prefers lower spend; when uncertain between adjacent levels, prefer the higher level.",
+        latencySensitivity: "",
+      };
+    case "quality":
+      return {
+        qualityFloor:
+          "The caller prefers higher quality; when uncertain between adjacent levels, prefer the higher level.",
+        costSensitivity:
+          "The caller prefers higher quality; when uncertain between adjacent levels, prefer the lower level.",
+        latencySensitivity: "",
+      };
+    case "latency":
+      return {
+        qualityFloor: "",
+        costSensitivity: "",
+        latencySensitivity:
+          "The caller prefers lower latency; when uncertain between adjacent levels, prefer the higher level.",
+      };
+    case "balanced":
+      return {
+        qualityFloor: "",
+        costSensitivity: "",
+        latencySensitivity: "",
+      };
+    default: {
+      const _exhaustive: never = policy;
+      throw new Error(`Unhandled routing policy: ${_exhaustive}`);
+    }
+  }
+}
+
+function appendHint(instructions: string, hint: string): string {
+  if (!hint) return instructions;
+  return `${instructions} ${hint}`;
+}
+
 export function routingQuestions(
   policy: RoutingPolicy,
 ): Record<string, Question> {
-  const criteria = Object.fromEntries(
-    CATALOG.map((model) => [
-      model.id,
-      `${model.name} (${model.provider}). ${model.summary} $${model.inputPerMTok}/M in, ~${model.latencyMs}ms.`,
-    ]),
+  const hints = policyScoreHints(policy);
+  const familyCriteria = Object.fromEntries(
+    TASK_FAMILIES.map((family) => [family, FAMILY_DESCRIPTIONS[family]]),
   );
 
   return {
-    model: {
+    task_family: {
       type: "choice",
-      instructions: `Select the single best model for this request under a ${policy} routing policy.`,
-      criteria,
+      instructions:
+        "Classify the user's request into exactly one task family. Ignore brand names. If the user mentions a specific AI model, treat it as a capability hint, not a selection.",
+      criteria: familyCriteria,
+    },
+    quality_floor: {
+      type: "score",
+      instructions: appendHint(
+        "How much model quality does this request need?",
+        hints.qualityFloor,
+      ),
+      criteria: [
+        "Trivial rewrite or lookup — a small model is enough.",
+        "Standard production task — a mid-tier model is enough.",
+        "Hard multi-step reasoning — upper-tier quality needed.",
+        "Frontier-only work — top of the leaderboard.",
+      ],
+    },
+    cost_sensitivity: {
+      type: "score",
+      instructions: appendHint(
+        "How sensitive is the caller to cost per task?",
+        hints.costSensitivity,
+      ),
+      criteria: [
+        "Indifferent to spend.",
+        "Prefer cheaper if quality holds.",
+        "Spend is a real constraint.",
+        "Minimize dollars per task.",
+      ],
+    },
+    latency_sensitivity: {
+      type: "score",
+      instructions: appendHint(
+        "How latency-sensitive is this request?",
+        hints.latencySensitivity,
+      ),
+      criteria: [
+        "Batch is fine.",
+        "Interactive.",
+        "Tight UX budget.",
+        "Hard real-time.",
+      ],
     },
     needs_vision: {
       type: "noul",
-      instructions: "Does this request require vision or image understanding?",
-    },
-    is_code: {
-      type: "noul",
-      instructions: "Is this primarily a programming or repository task?",
+      instructions:
+        "Does this request require image or screenshot understanding?",
     },
     needs_tools: {
       type: "noul",
       instructions: "Does this request need tool or function calling?",
     },
-    complexity: {
-      type: "score",
-      instructions: "How hard is this request?",
-      criteria: [
-        "Trivial lookup or rewrite",
-        "Standard production task",
-        "Hard multi-step reasoning",
-        "Frontier-only work",
-      ],
+    is_code: {
+      type: "noul",
+      instructions: "Is this primarily a programming or repository task?",
+    },
+    hallucination_sensitive: {
+      type: "noul",
+      instructions:
+        "Would a confident falsehood be expensive here (legal, medical, citations, money)?",
+    },
+    needs_long_context: {
+      type: "noul",
+      instructions:
+        "Does this request depend on a long document or many files?",
     },
   };
 }
