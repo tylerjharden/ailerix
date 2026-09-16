@@ -1,12 +1,20 @@
 import { isRoutingPolicy, type RoutingPolicy } from "@/lib/models";
-import { routeRequest } from "@/lib/router";
+import { AILERIX_AUTO_MODEL_ID, routeRequest } from "@/lib/router";
 import { serializeState, type SystemOneState } from "@/lib/system-one";
+import type { TaskFamily } from "@/lib/families";
 
-function completionFor(prompt: string, modelName: string, reasons: string[]): string {
+function completionFor(
+  prompt: string,
+  family: TaskFamily,
+  aaId: string,
+  costPerTaskUsd: number,
+  reasons: string[],
+): string {
   const clipped = prompt.trim().slice(0, 280);
   return [
-    `Routed through ${modelName}.`,
-    reasons[0] ?? "Jev produced a typed route.",
+    `Routed through ${AILERIX_AUTO_MODEL_ID} to task family ${family}.`,
+    `Frontier pick ${aaId} at $${costPerTaskUsd.toFixed(4)} per task.`,
+    reasons[0] ?? "Jev produced a typed route along the cost-per-task frontier.",
     clipped
       ? `Prompt received (${prompt.trim().length} chars): ${clipped}${prompt.trim().length > 280 ? "…" : ""}`
       : "Empty prompt.",
@@ -36,9 +44,13 @@ export async function POST(request: Request) {
       : "balanced";
 
     const decision = await routeRequest({ state, policy });
+    const promptText =
+      typeof state === "string" ? state : serializeState(state);
     const text = completionFor(
-      typeof state === "string" ? state : serializeState(state),
-      decision.model.name,
+      promptText,
+      decision.family,
+      decision.aaId,
+      decision.costPerTaskUsd,
       decision.reasons,
     );
 
@@ -46,10 +58,18 @@ export async function POST(request: Request) {
       id: `ailr_${crypto.randomUUID()}`,
       object: "ailerix.route",
       created: Math.floor(Date.now() / 1000),
+      model: AILERIX_AUTO_MODEL_ID,
+      family: decision.family,
+      family_confidence: decision.familyConfidence,
+      aa_id: decision.aaId,
+      cost_per_task_usd: decision.costPerTaskUsd,
+      floor: decision.floor,
+      fallback_aa_id: decision.fallbackAaId,
+      fallback: decision.fallbackAaId,
+      next_up_used: decision.nextUpUsed,
+      degraded: decision.degraded,
       policy: decision.policy,
       engine: decision.engine,
-      model: decision.model.id,
-      fallback: decision.fallback.id,
       latency_ms: decision.latency_ms,
       reasons: decision.reasons,
       decisions: decision.decisions,
