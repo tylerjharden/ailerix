@@ -6,6 +6,7 @@ Type-safe model router. An OpenRouter competitor that uses TypeSafe Jev (System 
 - Source: [github.com/tylerjharden/ailerix](https://github.com/tylerjharden/ailerix)
 - Product spec: [docs/SPEC.md](./docs/SPEC.md)
 - Implementation plan: [docs/PLAN.md](./docs/PLAN.md)
+- OpenRouter feature-parity matrix: [docs/FEATURES.md](./docs/FEATURES.md)
 
 An aileron banks an aircraft. Ailerix banks a request.
 
