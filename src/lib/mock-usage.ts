@@ -165,7 +165,8 @@ const requestsTotal = Math.max(
   ),
 );
 
-export const MOCK_USAGE_SUMMARY: UsageSummaryData = {
+/** Labeled sample fallback when no route events are recorded yet. */
+export const sampleUsage: UsageSummaryData = {
   periodLabel: "Last 7 days",
   totals: {
     spend: Math.round(spendTotal * 100) / 100,

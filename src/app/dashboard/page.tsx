@@ -1,6 +1,7 @@
 import { Suspense } from "react";
-import { ActivityHeatmap } from "@/components/dashboard/activity-heatmap";
-import { UsageSummary } from "@/components/dashboard/usage-summary";
+import { DashboardOverview } from "@/components/dashboard/usage-summary";
+import { LogsTable } from "@/components/dashboard/logs-table";
+import { ObservabilityPanel } from "@/components/dashboard/observability";
 
 const COMING_SOON_COPY =
   "Detailed views for this section ship with API keys. For now, explore routing in the Playground or read the API reference.";
@@ -9,12 +10,15 @@ function DashboardBody({ tab }: { tab: string | null }) {
   const isOverview = !tab || tab === "overview";
 
   if (isOverview) {
-    return (
-      <>
-        <UsageSummary />
-        <ActivityHeatmap />
-      </>
-    );
+    return <DashboardOverview />;
+  }
+
+  if (tab === "logs") {
+    return <LogsTable />;
+  }
+
+  if (tab === "observability") {
+    return <ObservabilityPanel />;
   }
 
   const title =
@@ -22,21 +26,17 @@ function DashboardBody({ tab }: { tab: string | null }) {
       ? "API Keys"
       : tab === "families"
         ? "Families"
-        : tab === "observability"
-          ? "Observability"
-          : tab === "settings"
-            ? "Settings"
-            : tab === "profile"
-              ? "Profile"
-              : tab === "activity"
-                ? "Activity"
-                : tab === "logs"
-                  ? "Logs"
-                  : tab === "credits"
-                    ? "Credits"
-                    : tab === "preferences"
-                      ? "Preferences"
-                      : "Dashboard";
+        : tab === "settings"
+          ? "Settings"
+          : tab === "profile"
+            ? "Profile"
+            : tab === "activity"
+              ? "Activity"
+              : tab === "credits"
+                ? "Credits"
+                : tab === "preferences"
+                  ? "Preferences"
+                  : "Dashboard";
 
   return (
     <div className="rounded-lg border border-dashed border-border bg-muted/30 px-6 py-12 text-center">
