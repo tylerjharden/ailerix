@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import {
   BarChart3,
+  Bot,
   CreditCard,
   Key,
   LayoutDashboard,
@@ -53,6 +54,11 @@ const WORKSPACE_NAV: NavItem[] = [
     label: "Settings",
     icon: Settings,
     tab: "settings",
+  },
+  {
+    href: "/docs#mcp",
+    label: "Agents & MCP",
+    icon: Bot,
   },
 ];
 
@@ -173,6 +179,9 @@ function DashboardIdentityHeader() {
 }
 
 function isActive(item: NavItem, tab: string | null, pathname: string): boolean {
+  if (item.href.startsWith("/docs")) {
+    return false;
+  }
   if (pathname !== "/dashboard") return false;
   if (item.tab) return item.tab === tab;
   return !tab || tab === "overview";

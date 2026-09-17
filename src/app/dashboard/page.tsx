@@ -1,14 +1,18 @@
 import { Suspense } from "react";
 import { auth } from "@clerk/nextjs/server";
 
-import { DashboardOverview } from "@/components/dashboard/usage-summary";
-import { LogsTable } from "@/components/dashboard/logs-table";
-import { ObservabilityPanel } from "@/components/dashboard/observability";
+import { ActivityTab } from "@/components/dashboard/activity-tab";
 import { ApiKeysPanel } from "@/components/dashboard/api-keys-panel";
 import {
   CreditsPanel,
   type CreditsLedgerRow,
 } from "@/components/dashboard/credits-panel";
+import { FamiliesTab } from "@/components/dashboard/families-tab";
+import { LogsTable } from "@/components/dashboard/logs-table";
+import { ObservabilityPanel } from "@/components/dashboard/observability";
+import { ProfileTab } from "@/components/dashboard/profile-tab";
+import { SettingsPreferencesPanel } from "@/components/dashboard/settings-preferences-panel";
+import { DashboardOverview } from "@/components/dashboard/usage-summary";
 import { authEnabled } from "@/lib/auth-config";
 import {
   ensureAccount,
@@ -16,9 +20,6 @@ import {
   listLedgerEntries,
 } from "@/lib/credits";
 import { CREDIT_PACKS, stripeEnabled } from "@/lib/stripe";
-
-const COMING_SOON_COPY =
-  "Detailed views for this section ship with API keys. For now, explore routing in the Playground or read the API reference.";
 
 async function CreditsTab({
   checkoutStatus,
@@ -67,6 +68,17 @@ async function CreditsTab({
   );
 }
 
+function SettingsPreferencesTab({ tab }: { tab: "settings" | "preferences" }) {
+  const heading = tab === "settings" ? "Settings" : "Preferences";
+  return (
+    <SettingsPreferencesPanel
+      heading={heading}
+      authEnabled={authEnabled()}
+      stripeConfigured={stripeEnabled()}
+    />
+  );
+}
+
 async function DashboardBody({
   tab,
   checkoutStatus,
@@ -96,27 +108,27 @@ async function DashboardBody({
     return <CreditsTab checkoutStatus={checkoutStatus} />;
   }
 
-  const title =
-    tab === "families"
-        ? "Families"
-        : tab === "settings"
-          ? "Settings"
-          : tab === "profile"
-            ? "Profile"
-            : tab === "activity"
-              ? "Activity"
-              : tab === "preferences"
-                  ? "Preferences"
-                  : "Dashboard";
+  if (tab === "families") {
+    return <FamiliesTab />;
+  }
 
-  return (
-    <div className="rounded-lg border border-dashed border-border bg-muted/30 px-6 py-12 text-center">
-      <h2 className="text-lg font-medium">{title}</h2>
-      <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
-        {COMING_SOON_COPY}
-      </p>
-    </div>
-  );
+  if (tab === "profile") {
+    return <ProfileTab />;
+  }
+
+  if (tab === "activity") {
+    return <ActivityTab />;
+  }
+
+  if (tab === "settings") {
+    return <SettingsPreferencesTab tab="settings" />;
+  }
+
+  if (tab === "preferences") {
+    return <SettingsPreferencesTab tab="preferences" />;
+  }
+
+  return <DashboardOverview />;
 }
 
 async function DashboardPageInner({

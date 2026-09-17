@@ -29,6 +29,7 @@ const FOOTER_COLUMNS = [
     title: "Developer",
     links: [
       { href: "/docs", label: "API reference" },
+      { href: "/docs#mcp", label: "MCP server" },
       { href: "/docs", label: "Spec" },
       { href: "#", label: "Status" },
     ],
