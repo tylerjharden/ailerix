@@ -8,13 +8,13 @@ What is configured, what is not, and exactly what to do. The app degrades gracef
 | --- | --- | --- |
 | Routing + echo execution + analytics (Neon) | **Live** on ailerix.com | none |
 | Anonymous tier (25 routes/day) | **Live** | none |
-| Sign-up / sign-in / dashboard accounts | **Off** in production (dev works via Clerk Keyless) | `CLERK_SECRET_KEY` + `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` |
-| API keys + credit metering UI | Off until Clerk is on | same as above |
-| Credit purchases (Stripe Checkout) | Off (buttons disabled) | `STRIPE_SECRET_KEY` + `STRIPE_WEBHOOK_SECRET` |
-| ACP agent checkout (SPT charge) | Endpoints live; charge declines | `STRIPE_SECRET_KEY` |
+| Sign-up / sign-in / dashboard accounts | **Live** (Clerk dev instance; production Clerk instance later) | none |
+| API keys + credit metering UI | **Live** | none |
+| Credit purchases (Stripe Checkout) | **Live** (test mode) | swap to live keys for real money |
+| ACP agent checkout (SPT charge) | **Live** (test mode; real SPTs need OpenAI program) | none |
 | Real frontier-model execution | Echo-only | any provider key |
-| Live Jev (vs local heuristics) | Local engine | `TYPESAFE_API_KEY` |
-| OAuth on the MCP server | Discovery live; token verification off | Clerk keys |
+| Live Jev (vs local heuristics) | **Live** (`engine: jev`) | none |
+| OAuth on the MCP server | **Live** (enable DCR in Clerk for Cursor auto-OAuth) | none |
 | DNS-AID `_agents` records | **Live** (Vercel DNS; no DNSSEC on Vercel) | none |
 | Hugging Face demo Space | **Live** | none |
 | Cursor Marketplace listing | Package ready; needs your submission | none |
