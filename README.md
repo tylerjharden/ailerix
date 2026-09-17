@@ -10,6 +10,8 @@ Type-safe model router. An OpenRouter competitor that uses TypeSafe Jev (System 
 
 An aileron banks an aircraft. Ailerix banks a request.
 
+**Agent-native**: Level 5/5 on [isitagentready.com](https://isitagentready.com). OAuth MCP server at `https://ailerix.com/api/mcp`, ACP checkout for credits, full `/.well-known` discovery surface, markdown content negotiation, [Cursor plugin](./cursor-plugin/), and a [Hugging Face demo Space](https://huggingface.co/spaces/tylerjharden/ailerix). Auth by Clerk (anonymous tier: 25 routes/day), prepaid credits by Stripe, storage on Neon Postgres.
+
 ## Name and domain
 
 **Use `ailerix.com`.** GoDaddy classified it as a standard registration, not premium or aftermarket. Verisign RDAP returned 404 for the name, which means it is not delegated.

@@ -158,6 +158,13 @@ Ailerix's philosophy in one line: OpenRouter is a marketplace with optional rout
 | First-party SDKs / Terraform | TS/Python/Go clients | Missing | F-later (OpenAI SDK baseURL swap works today) |
 | Ori agent harness + Vault | Agent fleet product | Missing | Out of scope |
 
+## Agent readiness (isitagentready.com)
+
+Scanned after the G-slice deploy: **Level 5/5 — Agent-Native**, 14/17 checks passing.
+
+- Passing: robots.txt (+ AI bot rules + Content-Signal), sitemap, Link headers, markdown negotiation, API catalog (RFC 9727), OAuth discovery (RFC 8414 proxy → Clerk), OAuth protected resource (RFC 9728), MCP server card, A2A agent card, agent-skills index, ARD ai-catalog, ACP discovery.
+- Failing, deliberate: `dnsAid` (needs `_agents` SVCB/HTTPS DNS records + DNSSEC at the registrar), `webMcp` (experimental in-page `navigator.modelContext` API), `authMd` (scanner wants the `agent_auth` block on the AS advertised first in PRM — Clerk's own metadata, which we don't control; our origin proxy serves it).
+
 ## Summary counts
 
 - Done (incl. by-design locks and native replacements): 15
