@@ -15,8 +15,10 @@ import {
   User,
   SlidersHorizontal,
 } from "lucide-react";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { SignedIn, SignedOut, useUser } from "@clerk/nextjs";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
+import { authEnabled } from "@/lib/auth-config";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 
 type NavItem = {
@@ -81,6 +83,97 @@ const ACCOUNT_NAV: NavItem[] = [
     tab: "preferences",
   },
 ];
+
+function initialsFrom(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+}
+
+function OperatorIdentityHeader() {
+  return (
+    <header className="flex items-center gap-4">
+      <Avatar className="size-14">
+        <AvatarFallback className="bg-primary/10 text-lg text-primary">
+          OP
+        </AvatarFallback>
+      </Avatar>
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight">Operator</h1>
+        <p className="text-sm text-muted-foreground">operator@ailerix.com</p>
+      </div>
+    </header>
+  );
+}
+
+function ClerkIdentityHeader() {
+  const { user, isLoaded } = useUser();
+
+  if (!isLoaded) {
+    return (
+      <header className="flex items-center gap-4">
+        <Avatar className="size-14">
+          <AvatarFallback className="bg-primary/10 text-lg text-primary">
+            …
+          </AvatarFallback>
+        </Avatar>
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Loading…</h1>
+          <p className="text-sm text-muted-foreground">&nbsp;</p>
+        </div>
+      </header>
+    );
+  }
+
+  const displayName =
+    user?.fullName ||
+    user?.username ||
+    user?.primaryEmailAddress?.emailAddress ||
+    "Account";
+  const email =
+    user?.primaryEmailAddress?.emailAddress ??
+    user?.emailAddresses[0]?.emailAddress ??
+    "";
+
+  return (
+    <header className="flex items-center gap-4">
+      <Avatar className="size-14">
+        {user?.imageUrl ? (
+          <AvatarImage src={user.imageUrl} alt={displayName} />
+        ) : null}
+        <AvatarFallback className="bg-primary/10 text-lg text-primary">
+          {initialsFrom(displayName)}
+        </AvatarFallback>
+      </Avatar>
+      <div className="min-w-0">
+        <h1 className="truncate text-2xl font-semibold tracking-tight">
+          {displayName}
+        </h1>
+        {email ? (
+          <p className="truncate text-sm text-muted-foreground">{email}</p>
+        ) : null}
+      </div>
+    </header>
+  );
+}
+
+function DashboardIdentityHeader() {
+  if (!authEnabled()) {
+    return <OperatorIdentityHeader />;
+  }
+
+  return (
+    <>
+      <SignedIn>
+        <ClerkIdentityHeader />
+      </SignedIn>
+      <SignedOut>
+        <OperatorIdentityHeader />
+      </SignedOut>
+    </>
+  );
+}
 
 function isActive(item: NavItem, tab: string | null, pathname: string): boolean {
   if (pathname !== "/dashboard") return false;
@@ -160,17 +253,7 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
       </ScrollArea>
 
       <div className="min-w-0 flex-1 space-y-8">
-        <header className="flex items-center gap-4">
-          <Avatar className="size-14">
-            <AvatarFallback className="bg-primary/10 text-lg text-primary">
-              OP
-            </AvatarFallback>
-          </Avatar>
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight">Operator</h1>
-            <p className="text-sm text-muted-foreground">operator@ailerix.com</p>
-          </div>
-        </header>
+        <DashboardIdentityHeader />
         {children}
       </div>
     </div>
