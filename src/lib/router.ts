@@ -3,6 +3,7 @@ import { providerSlugFor } from "@/lib/aa/join";
 import { familyCost } from "@/lib/aa/pareto";
 import { walkFrontier } from "@/lib/aa/walk";
 import { isTaskFamily, type TaskFamily } from "@/lib/families";
+import { isExecutable } from "@/lib/providers/registry";
 import type { RoutingPolicy } from "@/lib/models";
 import {
   assertAnswerType,
@@ -21,14 +22,19 @@ export type RouteDecision = {
   familyConfidence: number;
   aaId: string;
   providerSlug: string;
+  providerModelId: string;
   costPerTaskUsd: number;
   floor: number;
   fallbackAaId: string;
+  fallbackProviderSlug: string;
+  fallbackProviderModelId: string;
   nextUpUsed: boolean;
   degraded: boolean;
   policy: RoutingPolicy;
   engine: DecisionEngine;
   latency_ms: number;
+  jevMs: number;
+  walkMs: number;
   reasons: string[];
   decisions: SystemOneResponse;
 };
@@ -52,11 +58,13 @@ export async function routeRequest(input: {
   const started = Date.now();
   const { state, policy } = input;
 
+  const jevStarted = Date.now();
   const decisions = await evaluateSystemOne({
     state,
     model: "jev-latest",
     questions: routingQuestions(policy),
   });
+  const jevMs = Date.now() - jevStarted;
 
   const answers = decisions.answers;
   for (const id of ROUTING_ANSWER_IDS) {
@@ -100,7 +108,17 @@ export async function routeRequest(input: {
     requiredContext = serializeState(state).length;
   }
 
-  const snapshot = loadSnapshot();
+  const fullSnapshot = loadSnapshot();
+  let executableModels = fullSnapshot.models.filter((model) =>
+    isExecutable(model.provider_slug),
+  );
+  if (executableModels.length === 0) {
+    executableModels = fullSnapshot.models;
+    reasons.push("no_executable_provider");
+  }
+  const snapshot = { ...fullSnapshot, models: executableModels };
+
+  const walkStarted = Date.now();
   const walk = walkFrontier({
     snapshot,
     family,
@@ -119,6 +137,7 @@ export async function routeRequest(input: {
     },
     requiredContext,
   });
+  const walkMs = Date.now() - walkStarted;
 
   const mergedReasons = [...reasons, ...walk.reasons];
   const costPerTaskUsd = familyCost(walk.pick, family);
@@ -128,14 +147,19 @@ export async function routeRequest(input: {
     familyConfidence,
     aaId: walk.pick.aa_id,
     providerSlug: providerSlugFor(walk.pick),
+    providerModelId: walk.pick.provider_model_id,
     costPerTaskUsd,
     floor: walk.floor,
     fallbackAaId: walk.fallback.aa_id,
+    fallbackProviderSlug: providerSlugFor(walk.fallback),
+    fallbackProviderModelId: walk.fallback.provider_model_id,
     nextUpUsed: walk.next_up_used,
     degraded: walk.degraded,
     policy,
     engine: decisions.engine,
     latency_ms: Date.now() - started,
+    jevMs,
+    walkMs,
     reasons: mergedReasons,
     decisions,
   };

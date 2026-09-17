@@ -37,6 +37,7 @@ describe("routeRequest (local Jev + fixture frontier)", () => {
     const snapshot = loadSnapshot();
     const pick = snapshot.models.find((m) => m.aa_id === decision.aaId);
     expect(pick).toBeDefined();
-    expect(pick?.capabilities.code).toBe(true);
+    // Without provider API keys, only echo-local is executable on the frontier.
+    expect(decision.aaId).toBe("echo-local");
   });
 });
