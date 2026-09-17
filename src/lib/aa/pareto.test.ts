@@ -16,6 +16,7 @@ function stubModel(
     creator: "Test",
     openrouter_api_id: overrides.aa_id,
     provider_slug: overrides.aa_id,
+    provider_model_id: overrides.provider_model_id ?? overrides.aa_id,
     intelligence_index: 50,
     family_scores: {},
     cost_per_task_usd: { intelligence: 1 },

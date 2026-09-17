@@ -9,6 +9,7 @@
       "creator": "OpenAI",
       "openrouter_api_id": "openai/gpt-5.6-terra",
       "provider_slug": "openai/gpt-5.6-terra",
+      "provider_model_id": "gpt-5.6-terra",
       "intelligence_index": 71,
       "family_scores": {
         "intelligence": 71,
@@ -43,6 +44,7 @@
       "creator": "Anthropic",
       "openrouter_api_id": "anthropic/claude-fable-5.1",
       "provider_slug": "anthropic/claude-fable-5.1",
+      "provider_model_id": "claude-fable-5-1",
       "intelligence_index": 69,
       "family_scores": {
         "intelligence": 69,
@@ -78,6 +80,7 @@
       "creator": "Google",
       "openrouter_api_id": "google/gemini-2.5-pro",
       "provider_slug": "google/gemini-2.5-pro",
+      "provider_model_id": "gemini-2.5-pro",
       "intelligence_index": 60,
       "family_scores": {
         "intelligence": 60,
@@ -112,6 +115,7 @@
       "creator": "xAI",
       "openrouter_api_id": "x-ai/grok-4",
       "provider_slug": "x-ai/grok-4",
+      "provider_model_id": "grok-4",
       "intelligence_index": 58,
       "family_scores": {
         "intelligence": 58,
@@ -144,6 +148,7 @@
       "creator": "DeepSeek",
       "openrouter_api_id": "deepseek/deepseek-v4",
       "provider_slug": "deepseek/deepseek-v4",
+      "provider_model_id": "deepseek-chat",
       "intelligence_index": 54,
       "family_scores": {
         "intelligence": 54,
@@ -176,6 +181,7 @@
       "creator": "Qwen",
       "openrouter_api_id": "qwen/qwen3-coder",
       "provider_slug": "qwen/qwen3-coder",
+      "provider_model_id": "qwen3-coder-plus",
       "intelligence_index": 48,
       "family_scores": {
         "intelligence": 48,
@@ -206,6 +212,7 @@
       "creator": "OpenAI",
       "openrouter_api_id": "openai/gpt-5-mini",
       "provider_slug": "openai/gpt-5-mini",
+      "provider_model_id": "gpt-5-mini",
       "intelligence_index": 45,
       "family_scores": {
         "intelligence": 45,
@@ -236,6 +243,7 @@
       "creator": "Anthropic",
       "openrouter_api_id": "anthropic/claude-haiku-4.5",
       "provider_slug": "anthropic/claude-haiku-4.5",
+      "provider_model_id": "claude-haiku-4-5",
       "intelligence_index": 42,
       "family_scores": {
         "intelligence": 42,
@@ -266,6 +274,7 @@
       "creator": "Google",
       "openrouter_api_id": "google/gemini-2.5-flash",
       "provider_slug": "google/gemini-2.5-flash",
+      "provider_model_id": "gemini-2.5-flash",
       "intelligence_index": 38,
       "family_scores": {
         "intelligence": 38,
@@ -296,6 +305,7 @@
       "creator": "Ailerix",
       "openrouter_api_id": null,
       "provider_slug": "ailerix/echo-local",
+      "provider_model_id": "echo-local",
       "intelligence_index": 1,
       "family_scores": {
         "intelligence": 1,

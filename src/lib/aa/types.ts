@@ -8,6 +8,7 @@ export type AaModelSnapshot = {
   creator: string;
   openrouter_api_id: string | null;
   provider_slug: string;
+  provider_model_id: string;
   intelligence_index: number;
   family_scores: Partial<Record<TaskFamily, number>>;
   cost_per_task_usd: Partial<Record<TaskFamily, number>> & {
