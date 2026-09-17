@@ -3,12 +3,19 @@ import { after } from "next/server";
 import { apiError } from "@/lib/api-error";
 import { recordEvent } from "@/lib/analytics/store";
 import type { RouteEventInput } from "@/lib/analytics/types";
+import { incrementAnonymousUsage } from "@/lib/credits";
+import {
+  identityFields,
+  resolveRequestIdentity,
+} from "@/lib/request-identity";
 import { isRoutingPolicy, type RoutingPolicy } from "@/lib/models";
 import { AILERIX_AUTO_MODEL_ID, routeRequest } from "@/lib/router";
 import { serializeState, type SystemOneState } from "@/lib/system-one";
 import type { TaskFamily } from "@/lib/families";
 
 const GENERATION_HEADER = "X-Ailerix-Generation-Id";
+const WWW_AUTHENTICATE =
+  'Bearer resource_metadata="https://ailerix.com/.well-known/oauth-protected-resource"';
 
 function completionFor(
   prompt: string,
@@ -62,6 +69,34 @@ export async function POST(request: Request) {
       ? requested
       : "balanced";
 
+    const resolved = await resolveRequestIdentity(request);
+    if (!resolved.ok) {
+      return apiError({
+        status: 401,
+        message: "Invalid API key.",
+        code: "invalid_api_key",
+        errorType: "invalid_request",
+        headers: {
+          "WWW-Authenticate": WWW_AUTHENTICATE,
+          [GENERATION_HEADER]: generationId,
+        },
+      });
+    }
+    const identity = resolved.identity;
+
+    if (identity.kind === "anon") {
+      const usage = await incrementAnonymousUsage(identity.anonId);
+      if (usage.overLimit) {
+        return apiError({
+          status: 429,
+          message: "Anonymous daily request limit exceeded (25 per day).",
+          code: "rate_limit_exceeded",
+          errorType: "rate_limit_exceeded",
+          headers: { [GENERATION_HEADER]: generationId },
+        });
+      }
+    }
+
     const decision = await routeRequest({ state, policy });
     const promptText =
       typeof state === "string" ? state : serializeState(state);
@@ -74,6 +109,7 @@ export async function POST(request: Request) {
     );
 
     const totalMs = Date.now() - requestStarted;
+    const ids = identityFields(identity);
     const event: RouteEventInput = {
       generationId,
       endpoint: "route",
@@ -102,6 +138,9 @@ export async function POST(request: Request) {
       reasoningTokens: null,
       costPerTaskUsd: decision.costPerTaskUsd,
       estimatedTurnUsd: null,
+      accountId: ids.accountId,
+      apiKeyId: ids.apiKeyId,
+      anonId: ids.anonId,
     };
 
     try {

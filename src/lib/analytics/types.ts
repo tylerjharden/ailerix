@@ -26,6 +26,9 @@ export type RouteEventInput = {
   reasoningTokens?: number | null;
   costPerTaskUsd: number;
   estimatedTurnUsd?: number | null;
+  accountId?: string | null;
+  apiKeyId?: string | null;
+  anonId?: string | null;
 };
 
 export type StoredRouteEvent = RouteEventInput & {

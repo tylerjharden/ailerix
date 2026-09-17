@@ -4,6 +4,17 @@ import { apiError } from "@/lib/api-error";
 import { recordEvent } from "@/lib/analytics/store";
 import type { RouteEventInput } from "@/lib/analytics/types";
 import {
+  debitCredits,
+  incrementAnonymousUsage,
+  insufficientCreditsForExecution,
+  usageDebitUsd,
+} from "@/lib/credits";
+import {
+  identityFields,
+  resolveRequestIdentity,
+  type RequestIdentity,
+} from "@/lib/request-identity";
+import {
   executeRoute,
   ProviderUnavailableError,
   type ExecuteParams,
@@ -29,6 +40,8 @@ type ChatMessage = {
 const FORBIDDEN_BODY_KEYS = ["models", "provider", "plugins", "preset"] as const;
 
 const GENERATION_HEADER = "X-Ailerix-Generation-Id";
+const WWW_AUTHENTICATE =
+  'Bearer resource_metadata="https://ailerix.com/.well-known/oauth-protected-resource"';
 
 function messageText(message: ChatMessage): string {
   if (typeof message.content === "string") return message.content;
@@ -150,6 +163,7 @@ function openAiUsage(
 function buildRouteEventInput(input: {
   generationId: string;
   decision: RouteDecision;
+  identity: RequestIdentity;
   revealed: boolean;
   status: RouteEventInput["status"];
   executed: boolean;
@@ -163,6 +177,7 @@ function buildRouteEventInput(input: {
   estimatedTurnUsd?: number | null;
 }): RouteEventInput {
   const { decision } = input;
+  const ids = identityFields(input.identity);
   return {
     generationId: input.generationId,
     endpoint: "chat.completions",
@@ -191,7 +206,32 @@ function buildRouteEventInput(input: {
     reasoningTokens: input.reasoningTokens ?? null,
     costPerTaskUsd: decision.costPerTaskUsd,
     estimatedTurnUsd: input.estimatedTurnUsd ?? null,
+    accountId: ids.accountId,
+    apiKeyId: ids.apiKeyId,
+    anonId: ids.anonId,
   };
+}
+
+function deferDebit(
+  identity: RequestIdentity,
+  generationId: string,
+  estimatedTurnUsd: number | null | undefined,
+): void {
+  if (identity.kind === "anon") {
+    return;
+  }
+  const debit = usageDebitUsd(estimatedTurnUsd);
+  if (debit <= 0) {
+    return;
+  }
+  deferAfter(() => {
+    void debitCredits({
+      accountId: identity.accountId,
+      usd: debit,
+      reason: "usage_debit",
+      ref: generationId,
+    });
+  });
 }
 
 function deferAfter(task: () => void | Promise<void>): void {
@@ -218,6 +258,7 @@ function streamingResponse(input: {
   onDone: Promise<ExecutionStreamDone>;
   adapterMessages: AdapterMessage[];
   requestStarted: number;
+  identity: RequestIdentity;
 }): Response {
   const encoder = new TextEncoder();
   const {
@@ -230,6 +271,7 @@ function streamingResponse(input: {
     onDone,
     adapterMessages,
     requestStarted,
+    identity,
   } = input;
 
   const base = {
@@ -308,6 +350,7 @@ function streamingResponse(input: {
             buildRouteEventInput({
               generationId,
               decision,
+              identity,
               revealed,
               status: done.fallbackUsed ? "fallback_used" : "ok",
               executed: true,
@@ -321,6 +364,7 @@ function streamingResponse(input: {
               estimatedTurnUsd: done.estimatedTurnUsd,
             }),
           );
+          deferDebit(identity, generationId, done.estimatedTurnUsd);
         });
 
         controller.enqueue(encoder.encode("data: [DONE]\n\n"));
@@ -421,6 +465,34 @@ export async function POST(request: Request) {
 
     const revealed = request.headers.get("x-ailerix-reveal-route") === "1";
 
+    const resolved = await resolveRequestIdentity(request);
+    if (!resolved.ok) {
+      return apiError({
+        status: 401,
+        message: "Invalid API key.",
+        code: "invalid_api_key",
+        errorType: "invalid_request",
+        headers: {
+          "WWW-Authenticate": WWW_AUTHENTICATE,
+          [GENERATION_HEADER]: generationId,
+        },
+      });
+    }
+    const identity = resolved.identity;
+
+    if (identity.kind === "anon") {
+      const usage = await incrementAnonymousUsage(identity.anonId);
+      if (usage.overLimit) {
+        return apiError({
+          status: 429,
+          message: "Anonymous daily request limit exceeded (25 per day).",
+          code: "rate_limit_exceeded",
+          errorType: "rate_limit_exceeded",
+          headers: { [GENERATION_HEADER]: generationId },
+        });
+      }
+    }
+
     let decision: RouteDecision;
     decision = await routeRequest({
       state: {
@@ -432,6 +504,23 @@ export async function POST(request: Request) {
       },
       policy,
     });
+
+    if (identity.kind !== "anon") {
+      const blocked = await insufficientCreditsForExecution(
+        identity.accountId,
+        decision.aaId,
+        decision.costPerTaskUsd,
+      );
+      if (blocked) {
+        return apiError({
+          status: 402,
+          message: "Insufficient credits. Top up your balance to continue.",
+          code: "insufficient_credits",
+          errorType: "payment_required",
+          headers: { [GENERATION_HEADER]: generationId },
+        });
+      }
+    }
 
     const adapterMessages = toAdapterMessages(messages);
     const executeParams = extractExecuteParams(body);
@@ -452,6 +541,7 @@ export async function POST(request: Request) {
           buildRouteEventInput({
             generationId,
             decision,
+            identity,
             revealed,
             status: "provider_error",
             executed: false,
@@ -487,6 +577,7 @@ export async function POST(request: Request) {
         onDone: execution.onDone,
         adapterMessages,
         requestStarted,
+        identity,
       });
     }
 
@@ -510,6 +601,7 @@ export async function POST(request: Request) {
       buildRouteEventInput({
         generationId,
         decision,
+        identity,
         revealed,
         status: execution.fallbackUsed ? "fallback_used" : "ok",
         executed: true,
@@ -523,6 +615,7 @@ export async function POST(request: Request) {
         estimatedTurnUsd: execution.estimatedTurnUsd,
       }),
     );
+    deferDebit(identity, generationId, execution.estimatedTurnUsd);
 
     return Response.json(
       {

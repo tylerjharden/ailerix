@@ -91,6 +91,9 @@ function mapPrismaRow(row: {
   reasoningTokens: number | null;
   costPerTaskUsd: number;
   estimatedTurnUsd: number | null;
+  accountId: string | null;
+  apiKeyId: string | null;
+  anonId: string | null;
   createdAt: Date;
   updatedAt: Date;
 }): StoredRouteEvent {
@@ -123,6 +126,9 @@ function mapPrismaRow(row: {
     reasoningTokens: row.reasoningTokens,
     costPerTaskUsd: row.costPerTaskUsd,
     estimatedTurnUsd: row.estimatedTurnUsd,
+    accountId: row.accountId,
+    apiKeyId: row.apiKeyId,
+    anonId: row.anonId,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -275,6 +281,9 @@ function inputToCreateData(input: RouteEventInput) {
     reasoningTokens: input.reasoningTokens ?? null,
     costPerTaskUsd: input.costPerTaskUsd,
     estimatedTurnUsd: input.estimatedTurnUsd ?? null,
+    accountId: input.accountId ?? null,
+    apiKeyId: input.apiKeyId ?? null,
+    anonId: input.anonId ?? null,
   };
 }
 

@@ -3,6 +3,8 @@ export const ERROR_TYPES = [
   "model_not_allowed",
   "parameter_not_allowed",
   "not_found",
+  "payment_required",
+  "rate_limit_exceeded",
   "provider_unavailable",
   "timeout",
   "server",
@@ -16,6 +18,8 @@ function openAiErrorType(errorType: ErrorType): "invalid_request_error" | "api_e
     case "model_not_allowed":
     case "parameter_not_allowed":
     case "not_found":
+    case "payment_required":
+    case "rate_limit_exceeded":
       return "invalid_request_error";
     case "provider_unavailable":
     case "timeout":

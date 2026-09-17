@@ -6,6 +6,56 @@ datasource db {
   provider = "postgresql"
 }
 
+model Account {
+  id        String   @id @default(cuid())
+  clerkId   String   @unique
+  email     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  apiKeys   ApiKey[]
+  ledger    CreditLedger[]
+}
+
+model ApiKey {
+  id         String    @id @default(cuid())
+  accountId  String
+  account    Account   @relation(fields: [accountId], references: [id])
+  name       String
+  keyHash    String    @unique
+  prefix     String
+  disabled   Boolean   @default(false)
+  lastUsedAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@index([accountId])
+}
+
+model CreditLedger {
+  id           String   @id @default(cuid())
+  accountId    String
+  account      Account  @relation(fields: [accountId], references: [id])
+  deltaUsd     Float
+  balanceAfter Float
+  reason       String
+  ref          String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([accountId, createdAt])
+}
+
+model AnonymousUsage {
+  id        String   @id @default(cuid())
+  anonId    String
+  day       String
+  count     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([anonId, day])
+}
+
 model RouteEvent {
   id               String   @id @default(cuid())
   generationId     String   @unique
@@ -35,9 +85,13 @@ model RouteEvent {
   reasoningTokens  Int?
   costPerTaskUsd   Float
   estimatedTurnUsd Float?
+  accountId        String?
+  apiKeyId         String?
+  anonId           String?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
+  @@index([accountId])
   @@index([createdAt])
   @@index([family])
   @@index([status])

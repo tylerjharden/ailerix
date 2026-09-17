@@ -2,6 +2,7 @@ import { Suspense } from "react";
 import { DashboardOverview } from "@/components/dashboard/usage-summary";
 import { LogsTable } from "@/components/dashboard/logs-table";
 import { ObservabilityPanel } from "@/components/dashboard/observability";
+import { ApiKeysPanel } from "@/components/dashboard/api-keys-panel";
 
 const COMING_SOON_COPY =
   "Detailed views for this section ship with API keys. For now, explore routing in the Playground or read the API reference.";
@@ -21,10 +22,12 @@ function DashboardBody({ tab }: { tab: string | null }) {
     return <ObservabilityPanel />;
   }
 
+  if (tab === "api-keys") {
+    return <ApiKeysPanel />;
+  }
+
   const title =
-    tab === "api-keys"
-      ? "API Keys"
-      : tab === "families"
+    tab === "families"
         ? "Families"
         : tab === "settings"
           ? "Settings"
