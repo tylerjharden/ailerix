@@ -484,6 +484,293 @@ npx tsc --noEmit && npm test && npm run build
 
 ---
 
+---
+
+# E-slice: execution + analytics work packages
+
+Context for all WP-E packages: the routing slice (WP-1…WP-6) is done. `routeRequest` in `src/lib/router.ts` runs Jev (`evaluateSystemOne`) and the frontier walker (`walkFrontier` in `src/lib/aa/walk.ts`) over the fixture snapshot (`loadSnapshot` in `src/lib/aa/load.ts`). Completions are still mocked; nothing is persisted. The E-slice makes the banked route actually execute against real provider APIs and records every pipeline decision.
+
+Additional guardrails for E packages:
+
+- Provider API keys come only from `process.env` inside `src/lib/providers/registry.ts` and `src/lib/analytics/db.ts` (`DATABASE_URL`). No other module reads key env vars.
+- Absence of every key must never crash anything: routing still works, `echo-local` still executes, analytics falls back to memory.
+- Provider slugs still never appear in default response bodies. `aa_id`s are fine.
+- Analytics writes are fire-and-forget: a DB outage must not fail or slow a completion.
+
+## WP-E1 — Provider adapters
+
+**Goal.** A typed adapter layer that can execute a chat completion against OpenAI-compatible APIs, Anthropic, and Google, plus a deterministic local echo adapter, keyed off the AA snapshot rows.
+
+**Files.** Create `src/lib/providers/types.ts`, `src/lib/providers/openai-compat.ts`, `src/lib/providers/anthropic.ts`, `src/lib/providers/google.ts`, `src/lib/providers/echo.ts`, `src/lib/providers/registry.ts`, `src/lib/providers/registry.test.ts`. Modify `src/lib/aa/types.ts` (add `provider_model_id: string` to `AaModelSnapshot`) and `data/aa-snapshot.json` (add the field to every row).
+
+### 1. `types.ts`
+
+```ts
+export type AdapterMessage = {
+  role: "system" | "user" | "assistant" | "tool";
+  content: string | Array<{ type: string; [k: string]: unknown }>;
+  tool_call_id?: string;
+  tool_calls?: unknown[];
+};
+
+export type AdapterRequest = {
+  providerModelId: string;
+  messages: AdapterMessage[];
+  stream: boolean;
+  temperature?: number;
+  top_p?: number;
+  max_tokens?: number;
+  stop?: string | string[];
+  tools?: unknown[];
+  tool_choice?: unknown;
+  response_format?: unknown;
+  reasoning_effort?: string;
+  signal?: AbortSignal;
+};
+
+export type AdapterUsage = {
+  prompt_tokens: number;
+  completion_tokens: number;
+  reasoning_tokens?: number;
+};
+
+export type AdapterEvent =
+  | { type: "delta"; content: string }
+  | { type: "tool_calls"; tool_calls: unknown[] }
+  | { type: "done"; finish_reason: string; usage: AdapterUsage | null };
+
+export type AdapterCompletion = {
+  content: string;
+  tool_calls?: unknown[];
+  finish_reason: string;
+  usage: AdapterUsage | null;
+};
+
+export type ProviderAdapter = {
+  complete(req: AdapterRequest & { stream: false }): Promise<AdapterCompletion>;
+  stream(req: AdapterRequest & { stream: true }): AsyncGenerator<AdapterEvent>;
+};
+
+export class ProviderError extends Error {
+  constructor(
+    message: string,
+    public readonly code: "missing_key" | "http_error" | "timeout" | "bad_response",
+    public readonly status?: number,
+  ) { super(message); }
+}
+```
+
+### 2. Adapters
+
+- **`openai-compat.ts`** — factory `openAiCompatAdapter({ baseUrl, apiKeyEnv })`. POST `{baseUrl}/chat/completions`, `Authorization: Bearer`, standard body. Non-stream: map `choices[0]`. Stream: parse SSE lines (`data: …`, skip comments, stop at `[DONE]`), emit `delta` for `delta.content`, `tool_calls` when present, and a final `done` using the last chunk's `finish_reason` and any `usage` (request `stream_options: { include_usage: true }`). Throw `ProviderError("…", "missing_key")` if the env var is unset.
+- **`anthropic.ts`** — POST `https://api.anthropic.com/v1/messages`, headers `x-api-key`, `anthropic-version: 2023-06-01`. Map: system messages → top-level `system` string; user/assistant messages with text (image parts: pass base64/url source through as Anthropic image blocks when trivially mappable, else flatten to text); `max_tokens` required (default 4096). Tools: map OpenAI `function` tools → Anthropic `tools` (name/description/input_schema). Non-stream: join `content[].text`, map `stop_reason` (`end_turn→stop`, `max_tokens→length`, `tool_use→tool_calls`), usage `{input_tokens→prompt_tokens, output_tokens→completion_tokens}`. Stream: SSE events — `content_block_delta` `text_delta` → `delta`; `message_delta` carries `stop_reason` + usage → `done`.
+- **`google.ts`** — POST `https://generativelanguage.googleapis.com/v1beta/models/{id}:generateContent` (or `:streamGenerateContent?alt=sse`), header `x-goog-api-key`. Map messages → `contents` (`role: "user" | "model"`, system → `systemInstruction`), text and inline image parts. Non-stream: join `candidates[0].content.parts[].text`, map `finishReason` (`STOP→stop`, `MAX_TOKENS→length`), usage from `usageMetadata` (`promptTokenCount`, `candidatesTokenCount`, `thoughtsTokenCount→reasoning_tokens`). Stream: SSE chunks with the same shape → `delta` events; final chunk's `usageMetadata` → `done`.
+- **`echo.ts`** — no network, no key. Deterministic: content = `"[echo-local] "` + last user text (≤600 chars), usage from `Math.ceil(chars/4)`, finish `stop`. Stream: 3 delta chunks + done. Always available.
+
+All network adapters: single `fetch` with the passed `AbortSignal`; non-2xx → `ProviderError(text, "http_error", status)`. No retries inside adapters (the caller owns fallback).
+
+### 3. `registry.ts`
+
+```ts
+export type ProviderBinding = {
+  adapter: ProviderAdapter;
+  apiKeyEnv: string | null;      // null = always available (echo)
+};
+
+export function bindingFor(providerSlug: string): ProviderBinding | null;
+// prefix match: "openai/" → openai-compat(api.openai.com/v1, OPENAI_API_KEY)
+// "deepseek/" → openai-compat(api.deepseek.com, DEEPSEEK_API_KEY)
+// "x-ai/" → openai-compat(api.x.ai/v1, XAI_API_KEY)
+// "qwen/" → openai-compat(dashscope-intl.aliyuncs.com/compatible-mode/v1, DASHSCOPE_API_KEY)
+// "anthropic/" → anthropic(ANTHROPIC_API_KEY)
+// "google/" → google(GOOGLE_API_KEY, fallback env GEMINI_API_KEY)
+// "ailerix/" → echo(null)
+
+export function isExecutable(providerSlug: string): boolean;
+// binding exists AND (apiKeyEnv === null OR process.env[apiKeyEnv] is non-empty)
+```
+
+### 4. Fixture `provider_model_id` values
+
+gpt-5-6-terra → `gpt-5.6-terra`; gpt-5-mini → `gpt-5-mini`; claude-fable-5-1 → `claude-fable-5-1`; claude-haiku-4-5 → `claude-haiku-4-5`; gemini-2-5-pro → `gemini-2.5-pro`; gemini-2-5-flash → `gemini-2.5-flash`; grok-4 → `grok-4`; deepseek-v4 → `deepseek-chat`; qwen3-coder → `qwen3-coder-plus`; echo-local → `echo-local`.
+
+### 5. Tests (`registry.test.ts`)
+
+Slug→binding mapping for all prefixes; unknown slug → null; `isExecutable("ailerix/echo-local")` true with no env; `isExecutable("openai/gpt-5.6-terra")` false when env missing (use `vi.stubEnv`); echo adapter completes and streams deterministically; SSE parser handles a synthetic OpenAI-compatible stream (feed a `ReadableStream` of encoded frames through a small parse helper — export the parser for testability).
+
+**Do not** touch `src/lib/router.ts`, any `src/app/**` file, or `src/lib/analytics/**` (concurrent package).
+
+### Gate
+
+```bash
+npx tsc --noEmit && npm test -- src/lib/providers src/lib/aa
+```
+
+## WP-E3 — Analytics store (Prisma + memory fallback)
+
+**Goal.** A RouteEvent store capturing the full pipeline per request, backed by Prisma/Postgres when `DATABASE_URL` is set, an in-memory ring buffer otherwise. Pure library; endpoint wiring happens in WP-E2/E4/E5.
+
+**Files.** Create `prisma/schema.prisma`, `src/lib/analytics/types.ts`, `src/lib/analytics/db.ts`, `src/lib/analytics/store.ts`, `src/lib/analytics/store.test.ts`. Modify `package.json` scripts only to add `"db:push": "prisma db push"` and `"postinstall": "prisma generate --no-hints"` if needed. `@prisma/client` and `prisma` are already installed by the orchestrator; a real `DATABASE_URL` may exist in `.env` — schema is already pushed by the orchestrator; do NOT run migrations yourself, but you may run `npx prisma generate`.
+
+### 1. `prisma/schema.prisma`
+
+Generator `prisma-client-js`; datasource postgres `env("DATABASE_URL")`. One model:
+
+```prisma
+model RouteEvent {
+  id               String   @id @default(cuid())
+  generationId     String   @unique
+  endpoint         String   // "chat.completions" | "route"
+  policy           String
+  engine           String   // "jev" | "ailerix-local"
+  family           String
+  familyConfidence Float
+  qualityFloor     Float    // Jev score 0-3
+  mappedFloor      Float    // AA-scale floor
+  aaId             String
+  providerSlug     String
+  fallbackAaId     String
+  nextUpUsed       Boolean
+  degraded         Boolean
+  executed         Boolean
+  revealed         Boolean  @default(false)
+  status           String   // "ok" | "provider_error" | "fallback_used" | "mocked" | "route_only"
+  errorCode        String?
+  jevMs            Int
+  walkMs           Int
+  providerTtftMs   Int?
+  providerTotalMs  Int?
+  totalMs          Int
+  promptTokens     Int?
+  completionTokens Int?
+  reasoningTokens  Int?
+  costPerTaskUsd   Float
+  estimatedTurnUsd Float?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([createdAt])
+  @@index([family])
+  @@index([status])
+}
+```
+
+### 2. `types.ts`
+
+`RouteEventInput` mirroring the model minus id/createdAt/updatedAt; `AnalyticsSummary` type: `{ source: "db" | "memory"; totals: { requests, spendUsd, promptTokens, completionTokens }; byDay: Array<{ day: string; requests; spendUsd; tokens; families: Record<string, number> }>; byFamily: Array<{ family; requests; spendUsd; avgTotalMs }>; rates: { nextUp; degraded; providerError; executed }; latency: { jevMsP50; walkMsP50; providerTotalMsP50; totalMsP50; totalMsP95 } }`.
+
+### 3. `db.ts`
+
+Prisma client singleton with the global-caching pattern; export `dbAvailable(): boolean` (true iff `process.env.DATABASE_URL` is non-empty). Import `PrismaClient` at module top (guardrail: no inline imports); instantiate lazily inside the getter so a missing DATABASE_URL never throws at import time.
+
+### 4. `store.ts`
+
+- `recordEvent(input: RouteEventInput): Promise<void>` — always append to a module-level ring buffer (cap 500); if `dbAvailable()`, also `prisma.routeEvent.create` inside try/catch (swallow + `console.warn` on failure). Never throws.
+- `getEvent(generationId)` — DB first, memory fallback.
+- `listEvents({ limit = 50 })` — newest first, DB first, memory fallback.
+- `summarize({ days = 7 })` — compute `AnalyticsSummary` from DB rows (single `findMany` over the window is fine at this scale — no raw SQL needed) or from the ring buffer; `source` reflects which. Percentiles computed in JS.
+
+### 5. Tests (`store.test.ts`)
+
+Run WITHOUT `DATABASE_URL` (memory path): recordEvent + getEvent roundtrip; ring buffer caps at 500; summarize computes totals/rates/percentiles on a seeded set; `summarize` with zero events returns zeroed shape with `source: "memory"`. Do not test the Postgres path (no DB in CI).
+
+**Do not** touch `src/lib/providers/**` (concurrent package), `src/lib/router.ts`, or `src/app/**`.
+
+### Gate
+
+```bash
+npx prisma validate && npx tsc --noEmit && npm test -- src/lib/analytics
+```
+
+## WP-E2 — Execution wiring
+
+**Goal.** `/chat/completions` executes the banked route against the real provider (streaming included), with key-aware eligibility, one fallback attempt, reveal header, real usage, and RouteEvent persistence. `/route` records events too.
+
+**Files.** Modify `src/lib/router.ts`, `src/app/api/v1/chat/completions/route.ts`, `src/app/api/v1/route/route.ts`. Create `src/lib/execute.ts`, `src/lib/execute.test.ts`. Read-only deps: WP-E1 providers, WP-E3 store.
+
+### 1. `src/lib/router.ts`
+
+- Filter `loadSnapshot().models` through `isExecutable(model.provider_slug)` before `walkFrontier`. If the filter leaves nothing (impossible while echo-local exists, but guard), use the unfiltered snapshot and set a `no_executable_provider` reason.
+- Capture timings: `jevMs` (around `evaluateSystemOne`), `walkMs` (around `walkFrontier`). Add both to `RouteDecision` plus `providerModelId` and `fallbackProviderSlug`/`fallbackProviderModelId` (resolved from the snapshot).
+
+### 2. `src/lib/execute.ts`
+
+`executeRoute({ decision, messages, stream, params, revealed }): Promise<ExecutionResult>`:
+
+- Resolve binding via `bindingFor(decision.providerSlug)`; build `AdapterRequest` forwarding `temperature`, `top_p`, `max_tokens`/`max_completion_tokens`, `stop`, `tools`, `tool_choice`, `response_format`, `reasoning.effort`. Track `dropped_params: string[]` for accepted-but-unforwardable fields (e.g. `logit_bias`, `seed`).
+- Timeout: `AbortSignal.timeout(60_000)` per attempt.
+- Attempt the pick; on `ProviderError` (or abort), attempt the fallback binding once (`fallback_used`). Both fail → throw a typed error carrying `error_type: "provider_unavailable"` (502).
+- Capture `providerTtftMs` (first delta) and `providerTotalMs`.
+- Non-stream result: `{ kind: "json", content, tool_calls?, finish_reason, usage, executedSlug, executedAaId, fallbackUsed, ttftMs, totalMs, droppedParams }`. Stream result: `{ kind: "stream", events: AsyncGenerator<AdapterEvent>, meta… }` where meta resolves usage/finish at the end (expose an `onDone` promise the route handler awaits inside `after()` for persistence).
+- `estimatedTurnUsd`: `(prompt_tokens * input_per_mtok_usd + completion_tokens * output_per_mtok_usd) / 1_000_000` from the executed model's snapshot row; null when usage missing.
+
+### 3. `/chat/completions` route
+
+- Reveal: `request.headers.get("x-ailerix-reveal-route") === "1"` → response `model` = executed provider slug and `ailerix.revealed_model` set; default stays `ailerix/auto`.
+- Execute via `executeRoute`. Non-stream: real `content`, `tool_calls`, `finish_reason`, provider `usage` (fallback to char estimate only when adapter returned null), `ailerix` trace gains `executed: true|false`, `estimated_turn_usd`, `fallback_used`, `dropped_params`. Stream: convert `AdapterEvent`s to OpenAI chunks (role chunk first, deltas, tool_calls chunk, final chunk with finish_reason + usage + `ailerix` trace, then `[DONE]`).
+- If `executeRoute` throws provider_unavailable: 502 with the typed envelope `{ error: { message, type: "api_error", code: "provider_unavailable", metadata: { error_type: "provider_unavailable" } } }`.
+- Generation id: `gen_${crypto.randomUUID()}` used as the completion `id` and returned as header `X-Ailerix-Generation-Id` on every response (including streams).
+- Persistence: build a full `RouteEventInput` and call `recordEvent` inside `next/server`'s `after()` (import at top). Stream path: persist after `onDone` resolves. Statuses: `ok`, `fallback_used`, `provider_error` (502 path — still record), `mocked` (echo-only path is still `ok` + `executed: true`; `mocked` is reserved for adapter-bypass, which should now be unreachable).
+- Keep every existing 400 behavior and the existing tests passing (`usage` shape unchanged, body still slug-free by default — echo/aa ids fine).
+
+### 4. `/route` route
+
+Record a RouteEvent (`endpoint: "route"`, `status: "route_only"`, `executed: false`, provider fields from the decision, usage null) via `after()`. Response gains `generation_id` and the same header.
+
+### 5. Tests (`execute.test.ts`)
+
+Using the echo binding (no env needed): non-stream execute returns echo content + usage; stream execute yields deltas then done; fallback: a fake binding that throws `ProviderError` as pick with echo as fallback → `fallbackUsed: true`; both-fail → typed provider_unavailable error; `estimatedTurnUsd` computed from snapshot prices. Update `route.test.ts` expectations only if a field was added (do not weaken slug-leak assertions).
+
+**Do not** touch dashboard/UI files or `src/app/api/v1/models/**`, `internal/**`, `systemone/**`.
+
+### Gate
+
+```bash
+npx tsc --noEmit && npm test && npm run build
+```
+
+Live check (orchestrator runs too): with no provider keys, `POST /chat/completions` returns echo-local content with `executed: true` and an `X-Ailerix-Generation-Id` header; with `OPENAI_API_KEY` etc. set, returns real model output.
+
+## WP-E4 — Real dashboard analytics
+
+**Goal.** The dashboard reads real pipeline data: Overview from the summary API, Logs as a route-event table, Observability as latency/decision breakdowns. Mock data remains only as a labeled sample fallback.
+
+**Files.** Create `src/app/api/v1/analytics/summary/route.ts`, `src/app/api/v1/analytics/events/route.ts`, `src/components/dashboard/logs-table.tsx`, `src/components/dashboard/observability.tsx`. Modify `src/app/dashboard/page.tsx`, `src/components/dashboard/usage-summary.tsx`, `src/lib/mock-usage.ts` (only to export a clearly named `sampleUsage` used as fallback).
+
+1. **APIs**: both operator-gated exactly like `src/app/api/v1/internal/catalog/route.ts` (non-production OR `x-ailerix-operator` matching `AILERIX_OPERATOR_KEY`) — the dashboard fetches them same-origin in dev/preview. `summary` → `summarize({ days })` (`?days=7|30`); `events` → `listEvents({ limit ≤ 200 })`.
+2. **Overview**: fetch summary client-side; when `totals.requests > 0`, charts/cards/top-families render real data (spend by day/family, requests, tokens); when zero or fetch fails, render the existing seeded sample with a visible `Badge` "Sample data — no traffic recorded yet". Keep the Tokens/Spend/Requests tabs and the heatmap (heatmap may stay sample-backed with the badge until enough history exists; label it).
+3. **Logs tab**: real table — time, generation id (truncated, monospace), endpoint, family badge, aa_id, policy, status badge (ok green / fallback amber / error red / route_only muted), cost-per-task, est. turn USD, total ms. Empty state: "No requests yet — hit the playground." Loading skeleton + error alert.
+4. **Observability tab**: latency breakdown card (Jev / walk / provider p50 bars from `summary.latency`), decision quality card (nextUp %, degraded %, executed %, provider-error %), family distribution bar. Same loading/empty states.
+5. No provider slugs in the UI (aa_ids fine). Desktop + 375px must not overflow.
+
+**Do not** touch `src/lib/**` besides `mock-usage.ts`, or API routes other than the two new analytics routes.
+
+### Gate
+
+```bash
+npx tsc --noEmit && npm run build
+grep -RniE "openai/|anthropic/|deepseek/|qwen/|meta-llama/|mistral/|x-ai/" src/app/dashboard src/components/dashboard && exit 1 || echo clean
+```
+
+## WP-E5 — Generation lookup + error taxonomy
+
+**Goal.** OpenRouter-parity `GET /api/v1/generation?id=` and a stable typed error taxonomy across all endpoints.
+
+**Files.** Create `src/lib/api-error.ts`, `src/app/api/v1/generation/route.ts`, `src/app/api/v1/generation/route.test.ts`. Modify `src/app/api/v1/chat/completions/route.ts`, `src/app/api/v1/route/route.ts`, `src/app/api/v1/models/route.ts` (only if it can error), `src/app/api/v1/internal/catalog/route.ts`, `src/app/api/v1/systemone/route.ts` — error paths only.
+
+1. **`api-error.ts`**: `export const ERROR_TYPES = ["invalid_request","model_not_allowed","parameter_not_allowed","not_found","provider_unavailable","timeout","server"] as const;` + `apiError({ status, message, code, errorType })` returning the envelope `{ error: { message, type, code, metadata: { error_type } } }` (`type`: `invalid_request_error` for 4xx, `api_error` for 5xx). Exhaustive switch where errorType branches exist.
+2. **Generation endpoint**: `GET /api/v1/generation?id=gen_…` → `getEvent(generationId)` from `@/lib/analytics/store`. Found → `{ data: { id, created_at, endpoint, policy, engine, family, family_confidence, quality_floor, mapped_floor, aa_id, fallback_aa_id, next_up_used, degraded, executed, status, latency: { jev_ms, walk_ms, provider_ttft_ms, provider_total_ms, total_ms }, usage: { prompt_tokens, completion_tokens, reasoning_tokens }, cost: { cost_per_task_usd, estimated_turn_usd } } }`. **Omit `providerSlug`** from the public shape. Missing id param → 400 `invalid_request`; unknown id → 404 `not_found`. Public (no operator gate) — parity with OpenRouter, and it leaks no slugs.
+3. **Refactor existing error paths** to `apiError` (keep messages and codes identical where tests assert them — `model_not_allowed` and `parameter_not_allowed` messages must not change; they now additionally carry `metadata.error_type`).
+4. Tests: generation 400/404/200 (record a memory event via `recordEvent` first); envelope shape includes `metadata.error_type`; completions 400s still match previous assertions.
+
+**Do not** touch UI files or `src/lib/providers/**`.
+
+### Gate
+
+```bash
+npx tsc --noEmit && npm test && npm run build
+```
+
 ## Orchestrator prompt template
 
 Each dispatch sends exactly:
