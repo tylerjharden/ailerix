@@ -16,10 +16,11 @@ export function GET(request: Request) {
   if (clerkProtectedResourceConfigured()) {
     return clerkHandler(request);
   }
+  const fallbackAs = process.env.CLERK_OAUTH_AS_DOMAIN;
   return Response.json(
     {
       resource: "https://ailerix.com",
-      authorization_servers: [],
+      authorization_servers: fallbackAs ? [`https://${fallbackAs}`] : [],
     },
     {
       headers: {

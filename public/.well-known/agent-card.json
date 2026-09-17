@@ -3,6 +3,20 @@
   "description": "Ailerix routes LLM work through Jev task-family classification and a cost-per-task Pareto walk. Callers use ailerix/auto; software picks the frontier point.",
   "version": "1.0.0",
   "url": "https://ailerix.com/api/mcp",
+  "supportedInterfaces": [
+    {
+      "url": "https://ailerix.com/api/mcp",
+      "transport": "JSONRPC",
+      "protocol": "mcp",
+      "description": "Streamable HTTP MCP endpoint with OAuth (Clerk); read tools work unauthenticated."
+    },
+    {
+      "url": "https://ailerix.com/api/v1/chat/completions",
+      "transport": "HTTP+JSON",
+      "protocol": "openai-chat-completions",
+      "description": "OpenAI-compatible completions; model must be ailerix/auto or omitted."
+    }
+  ],
   "provider": {
     "organization": "Ailerix",
     "url": "https://ailerix.com"

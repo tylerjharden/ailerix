@@ -7,46 +7,60 @@
   },
   "entries": [
     {
-      "id": "ailerix-mcp-server-card",
-      "title": "Ailerix MCP server card",
+      "identifier": "urn:air:ailerix.com:discovery:mcp-server-card",
+      "displayName": "Ailerix MCP server card",
+      "type": "application/mcp-server-card+json",
       "url": "https://ailerix.com/.well-known/mcp/server-card.json",
-      "mediaType": "application/json",
-      "kind": "mcp-server-card"
+      "description": "Streamable HTTP MCP server with routing, completion, analytics, and credit tools.",
+      "representativeQueries": [
+        "route this prompt to the best model",
+        "run a completion without picking a model",
+        "check my ailerix credit balance"
+      ]
     },
     {
-      "id": "ailerix-agent-card",
-      "title": "Ailerix A2A agent card",
+      "identifier": "urn:air:ailerix.com:discovery:a2a-agent-card",
+      "displayName": "Ailerix A2A agent card",
+      "type": "application/a2a-agent-card+json",
       "url": "https://ailerix.com/.well-known/agent-card.json",
-      "mediaType": "application/json",
-      "kind": "agent-card"
+      "description": "A2A discovery card describing the Ailerix routing agent interfaces.",
+      "representativeQueries": [
+        "discover the ailerix agent interface",
+        "what skills does the ailerix agent expose"
+      ]
     },
     {
-      "id": "ailerix-agent-skills",
-      "title": "Ailerix agent skills index",
+      "identifier": "urn:air:ailerix.com:discovery:agent-skills",
+      "displayName": "Ailerix agent skills index",
+      "type": "application/json",
       "url": "https://ailerix.com/.well-known/agent-skills/index.json",
-      "mediaType": "application/json",
-      "kind": "agent-skills"
+      "description": "Skills for routing completions, checking credits, and topping up.",
+      "representativeQueries": [
+        "how do I use ailerix as an agent",
+        "top up ailerix credits programmatically"
+      ]
     },
     {
-      "id": "ailerix-acp",
-      "title": "Ailerix ACP protocol discovery",
-      "url": "https://ailerix.com/.well-known/acp.json",
-      "mediaType": "application/json",
-      "kind": "acp"
-    },
-    {
-      "id": "ailerix-openapi",
-      "title": "Ailerix OpenAPI",
+      "identifier": "urn:air:ailerix.com:api:openapi",
+      "displayName": "Ailerix OpenAPI description",
+      "type": "application/openapi+json",
       "url": "https://ailerix.com/openapi.json",
-      "mediaType": "application/openapi+json",
-      "kind": "openapi"
+      "description": "OpenAPI 3.1 description of the OpenAI-compatible v1 API surface.",
+      "representativeQueries": [
+        "call the ailerix chat completions api",
+        "what endpoints does ailerix expose"
+      ]
     },
     {
-      "id": "ailerix-auth-guide",
-      "title": "Ailerix agent authentication guide",
-      "url": "https://ailerix.com/auth.md",
-      "mediaType": "text/markdown",
-      "kind": "documentation"
+      "identifier": "urn:air:ailerix.com:commerce:acp",
+      "displayName": "Ailerix ACP checkout discovery",
+      "type": "application/json",
+      "url": "https://ailerix.com/.well-known/acp.json",
+      "description": "Agentic Commerce Protocol discovery for buying prepaid API credits.",
+      "representativeQueries": [
+        "buy ailerix api credits as an agent",
+        "complete an acp checkout for credits"
+      ]
     }
   ]
 }
