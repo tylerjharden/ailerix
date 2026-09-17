@@ -6,12 +6,35 @@ import type { NextFetchEvent, NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { authEnabled } from "@/lib/auth-config";
 
+const MARKDOWN_SLUG_BY_PATH: Record<string, string> = {
+  "/": "index",
+  "/docs": "docs",
+  "/models": "models",
+  "/playground": "playground",
+  "/dashboard": "dashboard",
+};
+
 /**
- * G4 will implement markdown content negotiation (Accept: text/markdown).
- * Returns a rewrite/response when negotiation applies, otherwise null.
+ * When clients request Markdown (e.g. agents), rewrite to hand-authored summaries.
  */
-export function negotiateMarkdown(_request: NextRequest): NextResponse | null {
-  return null;
+export function negotiateMarkdown(request: NextRequest): NextResponse | null {
+  if (request.method !== "GET") {
+    return null;
+  }
+
+  const accept = request.headers.get("accept") ?? "";
+  if (!accept.toLowerCase().includes("text/markdown")) {
+    return null;
+  }
+
+  const slug = MARKDOWN_SLUG_BY_PATH[request.nextUrl.pathname];
+  if (!slug) {
+    return null;
+  }
+
+  const url = request.nextUrl.clone();
+  url.pathname = `/md/${slug}`;
+  return NextResponse.rewrite(url);
 }
 
 const isProtectedRoute = createRouteMatcher(["/dashboard(.*)"]);

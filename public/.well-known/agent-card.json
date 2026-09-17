@@ -1,0 +1,43 @@
+{
+  "name": "ailerix",
+  "description": "Ailerix routes LLM work through Jev task-family classification and a cost-per-task Pareto walk. Callers use ailerix/auto; software picks the frontier point.",
+  "version": "1.0.0",
+  "url": "https://ailerix.com/api/mcp",
+  "provider": {
+    "organization": "Ailerix",
+    "url": "https://ailerix.com"
+  },
+  "capabilities": {
+    "streaming": false,
+    "pushNotifications": false,
+    "stateTransitionHistory": true
+  },
+  "authentication": {
+    "schemes": ["oauth2"],
+    "oauth2": {
+      "resource_metadata": "https://ailerix.com/.well-known/oauth-protected-resource"
+    }
+  },
+  "skills": [
+    {
+      "id": "route-a-completion",
+      "name": "Route and complete",
+      "description": "Preview routing or execute a completion with ailerix/auto.",
+      "tags": ["routing", "llm", "completion"]
+    },
+    {
+      "id": "check-credits",
+      "name": "Check credits",
+      "description": "Read API key or account balance before spend.",
+      "tags": ["billing", "credits"]
+    },
+    {
+      "id": "top-up-credits",
+      "name": "Top up credits",
+      "description": "Purchase credit packs via Stripe or ACP checkout.",
+      "tags": ["billing", "checkout"]
+    }
+  ],
+  "defaultInputModes": ["text/plain"],
+  "defaultOutputModes": ["text/plain", "application/json"]
+}

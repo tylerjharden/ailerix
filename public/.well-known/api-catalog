@@ -1,0 +1,19 @@
+{
+  "linkset": [
+    {
+      "anchor": "https://ailerix.com/api/v1",
+      "item": [
+        {
+          "href": "https://ailerix.com/openapi.json",
+          "rel": "service-desc",
+          "type": "application/openapi+json"
+        },
+        {
+          "href": "https://ailerix.com/docs",
+          "rel": "service-doc",
+          "type": "text/html"
+        }
+      ]
+    }
+  ]
+}

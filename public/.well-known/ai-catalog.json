@@ -1,0 +1,52 @@
+{
+  "specVersion": "1.0",
+  "host": {
+    "name": "Ailerix",
+    "url": "https://ailerix.com",
+    "description": "Frontier-walking LLM routing API with a single public model id ailerix/auto."
+  },
+  "entries": [
+    {
+      "id": "ailerix-mcp-server-card",
+      "title": "Ailerix MCP server card",
+      "url": "https://ailerix.com/.well-known/mcp/server-card.json",
+      "mediaType": "application/json",
+      "kind": "mcp-server-card"
+    },
+    {
+      "id": "ailerix-agent-card",
+      "title": "Ailerix A2A agent card",
+      "url": "https://ailerix.com/.well-known/agent-card.json",
+      "mediaType": "application/json",
+      "kind": "agent-card"
+    },
+    {
+      "id": "ailerix-agent-skills",
+      "title": "Ailerix agent skills index",
+      "url": "https://ailerix.com/.well-known/agent-skills/index.json",
+      "mediaType": "application/json",
+      "kind": "agent-skills"
+    },
+    {
+      "id": "ailerix-acp",
+      "title": "Ailerix ACP protocol discovery",
+      "url": "https://ailerix.com/.well-known/acp.json",
+      "mediaType": "application/json",
+      "kind": "acp"
+    },
+    {
+      "id": "ailerix-openapi",
+      "title": "Ailerix OpenAPI",
+      "url": "https://ailerix.com/openapi.json",
+      "mediaType": "application/openapi+json",
+      "kind": "openapi"
+    },
+    {
+      "id": "ailerix-auth-guide",
+      "title": "Ailerix agent authentication guide",
+      "url": "https://ailerix.com/auth.md",
+      "mediaType": "text/markdown",
+      "kind": "documentation"
+    }
+  ]
+}

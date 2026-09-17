@@ -1,0 +1,36 @@
+# Ailerix — LLM and agent index
+# https://ailerix.com
+
+> Ailerix routes every LLM request through Jev task-family classification and an Artificial Analysis cost-per-task frontier walk. Public model id: ailerix/auto.
+
+## Product
+
+- Home (markdown): https://ailerix.com/ (Accept: text/markdown)
+- Documentation (markdown): https://ailerix.com/docs (Accept: text/markdown)
+- Task families (markdown): https://ailerix.com/models (Accept: text/markdown)
+- Playground (markdown): https://ailerix.com/playground (Accept: text/markdown)
+- Dashboard (markdown): https://ailerix.com/dashboard (Accept: text/markdown)
+
+## API and specs
+
+- OpenAPI 3.1: https://ailerix.com/openapi.json
+- API catalog (RFC 9727): https://ailerix.com/.well-known/api-catalog
+- Agent authentication guide: https://ailerix.com/auth.md
+- Human docs: https://ailerix.com/docs
+
+## Agent protocols
+
+- MCP server card: https://ailerix.com/.well-known/mcp/server-card.json
+- A2A agent card: https://ailerix.com/.well-known/agent-card.json
+- Agent skills index: https://ailerix.com/.well-known/agent-skills/index.json
+- AI resource directory: https://ailerix.com/.well-known/ai-catalog.json
+
+## Primary operations
+
+- Chat completions: POST https://ailerix.com/api/v1/chat/completions
+- Route preview: POST https://ailerix.com/api/v1/route
+- Models list: GET https://ailerix.com/api/v1/models
+- Generation lookup: GET https://ailerix.com/api/v1/generation?id=
+- Analytics summary: GET https://ailerix.com/api/v1/analytics/summary
+- API key info: GET https://ailerix.com/api/v1/key
+- MCP (streamable HTTP): https://ailerix.com/api/mcp

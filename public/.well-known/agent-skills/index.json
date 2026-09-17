@@ -1,0 +1,24 @@
+{
+  "version": "1.0.0",
+  "skills": [
+    {
+      "id": "route-a-completion",
+      "name": "Route a completion",
+      "description": "Use when the user wants an LLM answer without choosing a vendor model. Call route_preview first, then create_completion with policy hints as needed.",
+      "url": "https://ailerix.com/auth.md#api-keys-server-to-server"
+    },
+    {
+      "id": "check-credits",
+      "name": "Check credits",
+      "description": "Use before high-volume or paid completions to verify balance or anonymous quota.",
+      "url": "https://ailerix.com/auth.md#http-semantics-you-must-handle"
+    },
+    {
+      "id": "top-up-credits",
+      "name": "Top up credits",
+      "description": "Use when the API returns 402 insufficient_credits or the user asks to add funds.",
+      "url": "https://ailerix.com/auth.md#buying-credits"
+    }
+  ],
+  "documentation": "https://ailerix.com/docs"
+}

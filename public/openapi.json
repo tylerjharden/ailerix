@@ -1,0 +1,700 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Ailerix API",
+    "version": "1.0.0",
+    "description": "Routing API for large language models. Public model id ailerix/auto only. Base URL https://ailerix.com/api/v1",
+    "contact": {
+      "url": "https://ailerix.com/docs"
+    }
+  },
+  "servers": [
+    {
+      "url": "https://ailerix.com/api/v1"
+    }
+  ],
+  "paths": {
+    "/chat/completions": {
+      "post": {
+        "operationId": "createChatCompletion",
+        "summary": "Create a routed chat completion",
+        "description": "Jev classifies the task, walks the cost-per-task frontier, and executes against the picked provider. Model must be omitted or ailerix/auto.",
+        "parameters": [
+          {
+            "name": "x-ailerix-reveal-route",
+            "in": "header",
+            "schema": { "type": "string", "enum": ["1"] },
+            "description": "When set to 1, response model field reveals the executed provider slug."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ChatCompletionRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Completion (JSON or text/event-stream when stream is true)",
+            "headers": {
+              "X-Ailerix-Generation-Id": {
+                "schema": { "type": "string" },
+                "description": "Generation id for GET /generation lookup."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ChatCompletionResponse" }
+              },
+              "text/event-stream": {
+                "schema": { "type": "string", "description": "OpenAI-style SSE chunks ending with data: [DONE]" }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request, model_not_allowed, or parameter_not_allowed",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorEnvelope" },
+                "examples": {
+                  "model_not_allowed": {
+                    "value": {
+                      "error": {
+                        "message": "Ailerix routes every request; model must be omitted or \"ailerix/auto\".",
+                        "type": "invalid_request_error",
+                        "code": "model_not_allowed",
+                        "metadata": { "error_type": "model_not_allowed" }
+                      }
+                    }
+                  },
+                  "parameter_not_allowed": {
+                    "value": {
+                      "error": {
+                        "message": "Parameter `provider` is not allowed.",
+                        "type": "invalid_request_error",
+                        "code": "parameter_not_allowed",
+                        "metadata": { "error_type": "parameter_not_allowed" }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "Insufficient credits for a billable completion",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorEnvelope" },
+                "example": {
+                  "error": {
+                    "message": "Insufficient credits to run this completion.",
+                    "type": "invalid_request_error",
+                    "code": "insufficient_credits",
+                    "metadata": { "error_type": "payment_required" }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Anonymous daily rate limit exceeded",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorEnvelope" },
+                "example": {
+                  "error": {
+                    "message": "Anonymous daily limit exceeded.",
+                    "type": "invalid_request_error",
+                    "code": "rate_limit_exceeded",
+                    "metadata": { "error_type": "rate_limit_exceeded" }
+                  }
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Provider unavailable after fallback",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorEnvelope" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/route": {
+      "post": {
+        "operationId": "createRoutePreview",
+        "summary": "Preview routing for a prompt or structured state",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/RouteRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Routing decision and narrative output",
+            "headers": {
+              "X-Ailerix-Generation-Id": { "schema": { "type": "string" } }
+            },
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/RouteResponse" }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing prompt or state",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorEnvelope" }
+              }
+            }
+          },
+          "402": {
+            "description": "Insufficient credits when metering applies",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorEnvelope" }
+              }
+            }
+          },
+          "429": {
+            "description": "Anonymous daily rate limit exceeded",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorEnvelope" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/systemone": {
+      "post": {
+        "operationId": "evaluateSystemOne",
+        "summary": "Evaluate arbitrary System One questions against state",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/SystemOneRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "System One response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/SystemOneResponse" }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid state, questions, or model",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorEnvelope" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/models": {
+      "get": {
+        "operationId": "listModels",
+        "summary": "List the public model id",
+        "responses": {
+          "200": {
+            "description": "Single-model list",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ModelList" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/generation": {
+      "get": {
+        "operationId": "getGeneration",
+        "summary": "Lookup a persisted route event by generation id",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string", "pattern": "^gen_" },
+            "description": "Generation id from X-Ailerix-Generation-Id or completion id."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Generation record",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/GenerationResponse" }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing id parameter",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorEnvelope" }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown generation id",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorEnvelope" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/analytics/summary": {
+      "get": {
+        "operationId": "getAnalyticsSummary",
+        "summary": "Aggregate routing analytics",
+        "parameters": [
+          {
+            "name": "days",
+            "in": "query",
+            "schema": { "type": "integer", "enum": [7, 30], "default": 7 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Analytics summary",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AnalyticsSummary" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/key": {
+      "get": {
+        "operationId": "getApiKeyInfo",
+        "summary": "API key metadata and balance (OpenRouter parity)",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": {
+            "description": "Key usage and balance",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiKeyInfoResponse" }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer key",
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string",
+                  "example": "Bearer resource_metadata=\"https://ailerix.com/.well-known/oauth-protected-resource\""
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorEnvelope" }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "API key prefixed with ailerix_"
+      }
+    },
+    "schemas": {
+      "ErrorEnvelope": {
+        "type": "object",
+        "required": ["error"],
+        "properties": {
+          "error": {
+            "type": "object",
+            "required": ["message", "type", "code", "metadata"],
+            "properties": {
+              "message": { "type": "string" },
+              "type": { "type": "string", "enum": ["invalid_request_error", "api_error"] },
+              "code": { "type": "string" },
+              "metadata": {
+                "type": "object",
+                "required": ["error_type"],
+                "properties": {
+                  "error_type": { "type": "string" }
+                }
+              }
+            }
+          }
+        }
+      },
+      "RoutingPolicy": {
+        "type": "string",
+        "enum": ["balanced", "cheap", "quality", "latency"]
+      },
+      "TaskFamily": {
+        "type": "string",
+        "enum": [
+          "intelligence",
+          "coding",
+          "agents",
+          "vision",
+          "factual",
+          "long_context",
+          "professional"
+        ]
+      },
+      "AilerixTrace": {
+        "type": "object",
+        "properties": {
+          "family": { "$ref": "#/components/schemas/TaskFamily" },
+          "family_confidence": { "type": "number" },
+          "quality_floor": { "type": "number", "description": "Jev quality_floor score 0-3" },
+          "floor": { "type": "number", "description": "Mapped AA-scale quality floor" },
+          "cost_per_task_usd": { "type": "number" },
+          "engine": { "type": "string" },
+          "policy": { "$ref": "#/components/schemas/RoutingPolicy" },
+          "fallback_aa_id": { "type": "string" },
+          "next_up_used": { "type": "boolean" },
+          "executed": { "type": "boolean" },
+          "estimated_turn_usd": { "type": ["number", "null"] },
+          "fallback_used": { "type": "boolean" },
+          "dropped_params": { "type": "array", "items": { "type": "string" } },
+          "revealed_model": { "type": "string", "description": "Present only when x-ailerix-reveal-route is 1" }
+        }
+      },
+      "ChatMessage": {
+        "type": "object",
+        "required": ["role"],
+        "properties": {
+          "role": { "type": "string", "enum": ["system", "user", "assistant", "tool"] },
+          "content": {
+            "oneOf": [
+              { "type": "string" },
+              { "type": "array", "items": { "type": "object" } },
+              { "type": "null" }
+            ]
+          },
+          "tool_call_id": { "type": "string" },
+          "tool_calls": { "type": "array", "items": { "type": "object" } }
+        }
+      },
+      "ChatCompletionRequest": {
+        "type": "object",
+        "required": ["messages"],
+        "properties": {
+          "model": {
+            "type": "string",
+            "const": "ailerix/auto",
+            "description": "Must be omitted or ailerix/auto"
+          },
+          "messages": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/ChatMessage" },
+            "minItems": 1
+          },
+          "policy": { "$ref": "#/components/schemas/RoutingPolicy" },
+          "stream": { "type": "boolean", "default": false },
+          "temperature": { "type": "number" },
+          "top_p": { "type": "number" },
+          "max_tokens": { "type": "integer" },
+          "max_completion_tokens": { "type": "integer" },
+          "stop": {
+            "oneOf": [
+              { "type": "string" },
+              { "type": "array", "items": { "type": "string" } }
+            ]
+          },
+          "tools": { "type": "array", "items": { "type": "object" } },
+          "tool_choice": {},
+          "response_format": { "type": "object" },
+          "reasoning": {
+            "type": "object",
+            "properties": {
+              "effort": { "type": "string" }
+            }
+          }
+        }
+      },
+      "ChatCompletionResponse": {
+        "type": "object",
+        "required": ["id", "object", "created", "model", "choices"],
+        "properties": {
+          "id": { "type": "string" },
+          "object": { "const": "chat.completion" },
+          "created": { "type": "integer" },
+          "model": { "type": "string", "description": "ailerix/auto unless reveal header set" },
+          "choices": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "index": { "type": "integer" },
+                "message": {
+                  "type": "object",
+                  "properties": {
+                    "role": { "const": "assistant" },
+                    "content": { "type": "string" },
+                    "tool_calls": { "type": "array", "items": { "type": "object" } }
+                  }
+                },
+                "finish_reason": { "type": "string" }
+              }
+            }
+          },
+          "usage": {
+            "type": "object",
+            "properties": {
+              "prompt_tokens": { "type": "integer" },
+              "completion_tokens": { "type": "integer" },
+              "total_tokens": { "type": "integer" }
+            }
+          },
+          "ailerix": { "$ref": "#/components/schemas/AilerixTrace" }
+        }
+      },
+      "RouteRequest": {
+        "type": "object",
+        "properties": {
+          "prompt": { "type": "string" },
+          "state": { "description": "Structured System One state; alternative to prompt" },
+          "policy": { "$ref": "#/components/schemas/RoutingPolicy" }
+        }
+      },
+      "RouteResponse": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "generation_id": { "type": "string" },
+          "object": { "const": "ailerix.route" },
+          "created": { "type": "integer" },
+          "model": { "const": "ailerix/auto" },
+          "family": { "$ref": "#/components/schemas/TaskFamily" },
+          "family_confidence": { "type": "number" },
+          "aa_id": { "type": "string" },
+          "cost_per_task_usd": { "type": "number" },
+          "floor": { "type": "number" },
+          "fallback_aa_id": { "type": "string" },
+          "fallback": { "type": "string" },
+          "next_up_used": { "type": "boolean" },
+          "degraded": { "type": "boolean" },
+          "policy": { "$ref": "#/components/schemas/RoutingPolicy" },
+          "engine": { "type": "string" },
+          "latency_ms": { "type": "number" },
+          "reasons": { "type": "array", "items": { "type": "string" } },
+          "decisions": { "type": "object" },
+          "output": { "type": "string" }
+        }
+      },
+      "SystemOneRequest": {
+        "type": "object",
+        "required": ["state", "questions"],
+        "properties": {
+          "state": {},
+          "model": { "type": "string", "description": "Optional System One model id" },
+          "questions": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "required": ["type"],
+              "properties": {
+                "type": { "type": "string", "enum": ["choice", "score", "noul"] },
+                "instructions": { "type": "string" },
+                "criteria": {}
+              }
+            }
+          }
+        }
+      },
+      "SystemOneResponse": {
+        "type": "object",
+        "description": "System One evaluate response with answers map",
+        "properties": {
+          "answers": { "type": "object" },
+          "latency_ms": { "type": "number" }
+        }
+      },
+      "ModelList": {
+        "type": "object",
+        "properties": {
+          "object": { "const": "list" },
+          "data": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": { "const": "ailerix/auto" },
+                "object": { "const": "model" },
+                "owned_by": { "const": "ailerix" },
+                "description": { "type": "string" }
+              }
+            }
+          }
+        }
+      },
+      "GenerationResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "created_at": { "type": "integer" },
+              "endpoint": { "type": "string" },
+              "policy": { "type": "string" },
+              "engine": { "type": "string" },
+              "family": { "type": "string" },
+              "family_confidence": { "type": "number" },
+              "quality_floor": { "type": "number" },
+              "mapped_floor": { "type": "number" },
+              "aa_id": { "type": "string" },
+              "fallback_aa_id": { "type": "string" },
+              "next_up_used": { "type": "boolean" },
+              "degraded": { "type": "boolean" },
+              "executed": { "type": "boolean" },
+              "status": { "type": "string" },
+              "latency": {
+                "type": "object",
+                "properties": {
+                  "jev_ms": { "type": "integer" },
+                  "walk_ms": { "type": "integer" },
+                  "provider_ttft_ms": { "type": ["integer", "null"] },
+                  "provider_total_ms": { "type": ["integer", "null"] },
+                  "total_ms": { "type": "integer" }
+                }
+              },
+              "usage": {
+                "type": "object",
+                "properties": {
+                  "prompt_tokens": { "type": ["integer", "null"] },
+                  "completion_tokens": { "type": ["integer", "null"] },
+                  "reasoning_tokens": { "type": ["integer", "null"] }
+                }
+              },
+              "cost": {
+                "type": "object",
+                "properties": {
+                  "cost_per_task_usd": { "type": "number" },
+                  "estimated_turn_usd": { "type": ["number", "null"] }
+                }
+              }
+            }
+          }
+        }
+      },
+      "AnalyticsSummary": {
+        "type": "object",
+        "properties": {
+          "source": { "type": "string", "enum": ["db", "memory"] },
+          "totals": {
+            "type": "object",
+            "properties": {
+              "requests": { "type": "integer" },
+              "spendUsd": { "type": "number" },
+              "promptTokens": { "type": "integer" },
+              "completionTokens": { "type": "integer" }
+            }
+          },
+          "byDay": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "day": { "type": "string", "format": "date" },
+                "requests": { "type": "integer" },
+                "spendUsd": { "type": "number" },
+                "tokens": { "type": "integer" },
+                "families": { "type": "object", "additionalProperties": { "type": "integer" } }
+              }
+            }
+          },
+          "byFamily": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "family": { "type": "string" },
+                "requests": { "type": "integer" },
+                "spendUsd": { "type": "number" },
+                "avgTotalMs": { "type": "number" }
+              }
+            }
+          },
+          "rates": {
+            "type": "object",
+            "properties": {
+              "nextUp": { "type": "number" },
+              "degraded": { "type": "number" },
+              "providerError": { "type": "number" },
+              "executed": { "type": "number" }
+            }
+          },
+          "latency": {
+            "type": "object",
+            "properties": {
+              "jevMsP50": { "type": "number" },
+              "walkMsP50": { "type": "number" },
+              "providerTotalMsP50": { "type": "number" },
+              "totalMsP50": { "type": "number" },
+              "totalMsP95": { "type": "number" }
+            }
+          }
+        }
+      },
+      "ApiKeyInfoResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "label",
+              "usage_usd",
+              "balance_usd",
+              "is_free_tier",
+              "anonymous_daily"
+            ],
+            "properties": {
+              "label": { "type": "string", "description": "Human-readable key name" },
+              "usage_usd": { "type": "number", "description": "Lifetime usage debited in USD" },
+              "balance_usd": { "type": "number", "description": "Current account balance in USD" },
+              "is_free_tier": {
+                "type": "boolean",
+                "description": "True when balance is at or below the signup grant"
+              },
+              "anonymous_daily": {
+                "type": ["null", "object"],
+                "description": "Null for API keys; anonymous tier would expose daily cap usage"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
