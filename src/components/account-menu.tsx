@@ -15,8 +15,7 @@ import {
   User,
 } from "lucide-react";
 import {
-  SignedIn,
-  SignedOut,
+  Show,
   useClerk,
   useUser,
 } from "@clerk/nextjs";
@@ -245,10 +244,10 @@ export function AccountMenu() {
 
   return (
     <>
-      <SignedIn>
+      <Show when="signed-in">
         <ClerkAccountMenu />
-      </SignedIn>
-      <SignedOut>
+      </Show>
+      <Show when="signed-out">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
@@ -273,7 +272,7 @@ export function AccountMenu() {
             <ThemeToggleRow />
           </DropdownMenuContent>
         </DropdownMenu>
-      </SignedOut>
+      </Show>
     </>
   );
 }

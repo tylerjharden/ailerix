@@ -15,7 +15,7 @@ import {
   User,
   SlidersHorizontal,
 } from "lucide-react";
-import { SignedIn, SignedOut, useUser } from "@clerk/nextjs";
+import { Show, useUser } from "@clerk/nextjs";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
 import { authEnabled } from "@/lib/auth-config";
@@ -165,12 +165,9 @@ function DashboardIdentityHeader() {
 
   return (
     <>
-      <SignedIn>
+      <Show when="signed-in" fallback={<OperatorIdentityHeader />}>
         <ClerkIdentityHeader />
-      </SignedIn>
-      <SignedOut>
-        <OperatorIdentityHeader />
-      </SignedOut>
+      </Show>
     </>
   );
 }
