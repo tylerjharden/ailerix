@@ -20,7 +20,11 @@ export function GET(request: Request) {
   return Response.json(
     {
       resource: "https://ailerix.com",
-      authorization_servers: fallbackAs ? [`https://${fallbackAs}`] : [],
+      // First entry: the real AS (Clerk). Second: this origin, which proxies
+      // the same metadata plus the WorkOS-convention agent_auth block.
+      authorization_servers: fallbackAs
+        ? [`https://${fallbackAs}`, "https://ailerix.com"]
+        : ["https://ailerix.com"],
       scopes_supported: ["openid", "profile", "email"],
       bearer_methods_supported: ["header"],
       resource_documentation: "https://ailerix.com/auth.md",
