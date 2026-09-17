@@ -1,4 +1,5 @@
 import { loadSnapshot } from "@/lib/aa/load";
+import { apiError } from "@/lib/api-error";
 
 function isCatalogAuthorized(request: Request): boolean {
   if (process.env.NODE_ENV !== "production") {
@@ -14,16 +15,12 @@ function isCatalogAuthorized(request: Request): boolean {
 
 export async function GET(request: Request) {
   if (!isCatalogAuthorized(request)) {
-    return Response.json(
-      {
-        error: {
-          message: "Not found",
-          type: "invalid_request_error",
-          code: "not_found",
-        },
-      },
-      { status: 404 },
-    );
+    return apiError({
+      status: 404,
+      message: "Not found",
+      code: "not_found",
+      errorType: "not_found",
+    });
   }
 
   return Response.json(loadSnapshot());

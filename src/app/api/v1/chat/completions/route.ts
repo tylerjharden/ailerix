@@ -1,5 +1,6 @@
 import { after } from "next/server";
 
+import { apiError } from "@/lib/api-error";
 import { recordEvent } from "@/lib/analytics/store";
 import type { RouteEventInput } from "@/lib/analytics/types";
 import {
@@ -28,33 +29,6 @@ type ChatMessage = {
 const FORBIDDEN_BODY_KEYS = ["models", "provider", "plugins", "preset"] as const;
 
 const GENERATION_HEADER = "X-Ailerix-Generation-Id";
-
-function invalidModelResponse() {
-  return Response.json(
-    {
-      error: {
-        message:
-          'Ailerix routes every request; model must be omitted or "ailerix/auto".',
-        type: "invalid_request_error",
-        code: "model_not_allowed",
-      },
-    },
-    { status: 400 },
-  );
-}
-
-function parameterNotAllowedResponse(field: string) {
-  return Response.json(
-    {
-      error: {
-        message: `Parameter \`${field}\` is not allowed.`,
-        type: "invalid_request_error",
-        code: "parameter_not_allowed",
-      },
-    },
-    { status: 400 },
-  );
-}
 
 function messageText(message: ChatMessage): string {
   if (typeof message.content === "string") return message.content;
@@ -409,22 +383,35 @@ export async function POST(request: Request) {
 
     for (const field of FORBIDDEN_BODY_KEYS) {
       if (field in body) {
-        return parameterNotAllowedResponse(field);
+        return apiError({
+          status: 400,
+          message: `Parameter \`${field}\` is not allowed.`,
+          code: "parameter_not_allowed",
+          errorType: "parameter_not_allowed",
+        });
       }
     }
 
     if (body.model !== undefined && body.model !== AILERIX_AUTO_MODEL_ID) {
-      return invalidModelResponse();
+      return apiError({
+        status: 400,
+        message:
+          'Ailerix routes every request; model must be omitted or "ailerix/auto".',
+        code: "model_not_allowed",
+        errorType: "model_not_allowed",
+      });
     }
 
     const messages = body.messages ?? [];
     const lastUser = [...messages].reverse().find((message) => message.role === "user");
     const lastUserText = lastUser ? messageText(lastUser).trim() : "";
     if (!lastUserText) {
-      return Response.json(
-        { error: "messages must include a user turn" },
-        { status: 400 },
-      );
+      return apiError({
+        status: 400,
+        message: "messages must include a user turn",
+        code: "invalid_request",
+        errorType: "invalid_request",
+      });
     }
 
     const requested = body.policy ?? "balanced";
@@ -472,20 +459,13 @@ export async function POST(request: Request) {
             totalMs,
           }),
         );
-        return Response.json(
-          {
-            error: {
-              message: executeError.message,
-              type: "api_error",
-              code: "provider_unavailable",
-              metadata: { error_type: "provider_unavailable" },
-            },
-          },
-          {
-            status: 502,
-            headers: { [GENERATION_HEADER]: generationId },
-          },
-        );
+        return apiError({
+          status: 502,
+          message: executeError.message,
+          code: "provider_unavailable",
+          errorType: "provider_unavailable",
+          headers: { [GENERATION_HEADER]: generationId },
+        });
       }
       throw executeError;
     }
@@ -574,12 +554,12 @@ export async function POST(request: Request) {
     );
   } catch (error) {
     const message = error instanceof Error ? error.message : "Completion failed";
-    return Response.json(
-      { error: message },
-      {
-        status: 500,
-        headers: { [GENERATION_HEADER]: generationId },
-      },
-    );
+    return apiError({
+      status: 500,
+      message,
+      code: "server_error",
+      errorType: "server",
+      headers: { [GENERATION_HEADER]: generationId },
+    });
   }
 }

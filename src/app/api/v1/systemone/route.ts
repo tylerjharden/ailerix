@@ -1,3 +1,4 @@
+import { apiError } from "@/lib/api-error";
 import {
   evaluateSystemOne,
   isSystemOneModel,
@@ -62,10 +63,20 @@ export async function POST(request: Request) {
     };
 
     if (body.state === undefined) {
-      return Response.json({ error: "state is required" }, { status: 400 });
+      return apiError({
+        status: 400,
+        message: "state is required",
+        code: "invalid_request",
+        errorType: "invalid_request",
+      });
     }
     if (!body.questions || Object.keys(body.questions).length === 0) {
-      return Response.json({ error: "questions are required" }, { status: 400 });
+      return apiError({
+        status: 400,
+        message: "questions are required",
+        code: "invalid_request",
+        errorType: "invalid_request",
+      });
     }
     const model =
       body.model === undefined
@@ -74,7 +85,12 @@ export async function POST(request: Request) {
           ? body.model
           : null;
     if (model === null) {
-      return Response.json({ error: "Unknown System One model" }, { status: 400 });
+      return apiError({
+        status: 400,
+        message: "Unknown System One model",
+        code: "invalid_request",
+        errorType: "invalid_request",
+      });
     }
 
     const questions = Object.fromEntries(
@@ -93,6 +109,11 @@ export async function POST(request: Request) {
     return Response.json(result);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Routing failed";
-    return Response.json({ error: message }, { status: 400 });
+    return apiError({
+      status: 400,
+      message,
+      code: "invalid_request",
+      errorType: "invalid_request",
+    });
   }
 }

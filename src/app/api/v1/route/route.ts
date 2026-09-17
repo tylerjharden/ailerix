@@ -1,5 +1,6 @@
 import { after } from "next/server";
 
+import { apiError } from "@/lib/api-error";
 import { recordEvent } from "@/lib/analytics/store";
 import type { RouteEventInput } from "@/lib/analytics/types";
 import { isRoutingPolicy, type RoutingPolicy } from "@/lib/models";
@@ -48,10 +49,12 @@ export async function POST(request: Request) {
 
     const state = body.state ?? body.prompt;
     if (state === undefined || (typeof state === "string" && state.trim() === "")) {
-      return Response.json(
-        { error: "Send a prompt or a structured state." },
-        { status: 400 },
-      );
+      return apiError({
+        status: 400,
+        message: "Send a prompt or a structured state.",
+        code: "invalid_request",
+        errorType: "invalid_request",
+      });
     }
 
     const requested = body.policy ?? "balanced";
@@ -140,12 +143,12 @@ export async function POST(request: Request) {
     );
   } catch (error) {
     const message = error instanceof Error ? error.message : "Route failed";
-    return Response.json(
-      { error: message },
-      {
-        status: 500,
-        headers: { [GENERATION_HEADER]: generationId },
-      },
-    );
+    return apiError({
+      status: 500,
+      message,
+      code: "server_error",
+      errorType: "server",
+      headers: { [GENERATION_HEADER]: generationId },
+    });
   }
 }
