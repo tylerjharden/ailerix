@@ -1,0 +1,44 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model RouteEvent {
+  id               String   @id @default(cuid())
+  generationId     String   @unique
+  endpoint         String   // "chat.completions" | "route"
+  policy           String
+  engine           String   // "jev" | "ailerix-local"
+  family           String
+  familyConfidence Float
+  qualityFloor     Float    // Jev score 0-3
+  mappedFloor      Float    // AA-scale floor
+  aaId             String
+  providerSlug     String
+  fallbackAaId     String
+  nextUpUsed       Boolean
+  degraded         Boolean
+  executed         Boolean
+  revealed         Boolean  @default(false)
+  status           String   // "ok" | "provider_error" | "fallback_used" | "mocked" | "route_only"
+  errorCode        String?
+  jevMs            Int
+  walkMs           Int
+  providerTtftMs   Int?
+  providerTotalMs  Int?
+  totalMs          Int
+  promptTokens     Int?
+  completionTokens Int?
+  reasoningTokens  Int?
+  costPerTaskUsd   Float
+  estimatedTurnUsd Float?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([createdAt])
+  @@index([family])
+  @@index([status])
+}
