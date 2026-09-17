@@ -46,6 +46,16 @@ export async function GET() {
   }
 
   const metadata = await upstream.json();
+  // WorkOS auth.md convention: describe how agents obtain credentials.
+  metadata.agent_auth = {
+    skill: "https://ailerix.com/auth.md",
+    register_uri: "https://ailerix.com/sign-up",
+    identity_types_supported: ["anonymous"],
+    anonymous: {
+      credential_types_supported: ["api_key"],
+      claim_uri: "https://ailerix.com/dashboard?tab=api-keys",
+    },
+  };
   return Response.json(metadata, {
     headers: { "Cache-Control": "public, max-age=300" },
   });
