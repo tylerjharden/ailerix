@@ -1,4 +1,4 @@
-# Auth
+# Ailerix auth.md
 
 This guide is for autonomous agents, MCP clients, and API integrators using [Ailerix](https://ailerix.com).
 
