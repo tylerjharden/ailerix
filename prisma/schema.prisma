@@ -96,3 +96,19 @@ model RouteEvent {
   @@index([family])
   @@index([status])
 }
+
+model AcpSession {
+  id             String   @id @default(cuid())
+  status         String
+  itemsJson      String
+  buyerJson      String
+  totalMinor     Int
+  currency       String   @default("usd")
+  orderId        String?
+  idempotencyKey String?  @unique
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([status])
+  @@index([createdAt])
+}
