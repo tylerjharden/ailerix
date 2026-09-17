@@ -39,10 +39,48 @@ export function negotiateMarkdown(request: NextRequest): NextResponse | null {
 
 const isProtectedRoute = createRouteMatcher(["/dashboard(.*)"]);
 
+const CORS_PATH = /^\/(api\/(v1|acp|mcp)|\.well-known)\//;
+
+const CORS_HEADERS: Record<string, string> = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, POST, PATCH, OPTIONS",
+  "Access-Control-Allow-Headers":
+    "Authorization, Content-Type, Accept, Idempotency-Key, Request-Id, X-Ailerix-Reveal-Route, X-Ailerix-Operator, Mcp-Session-Id, Mcp-Protocol-Version",
+  "Access-Control-Expose-Headers": "X-Ailerix-Generation-Id, Mcp-Session-Id",
+  "Access-Control-Max-Age": "86400",
+};
+
+/**
+ * Public-API CORS so browsers and hosted demos (e.g. the Hugging Face Space)
+ * can call the gateway directly. Returns a preflight response or decorates
+ * the passed response.
+ */
+function applyCors(
+  request: NextRequest,
+  response?: NextResponse,
+): NextResponse | null {
+  if (!CORS_PATH.test(request.nextUrl.pathname)) {
+    return response ?? null;
+  }
+  if (request.method === "OPTIONS") {
+    return new NextResponse(null, { status: 204, headers: CORS_HEADERS });
+  }
+  const res = response ?? NextResponse.next();
+  for (const [key, value] of Object.entries(CORS_HEADERS)) {
+    res.headers.set(key, value);
+  }
+  return res;
+}
+
 const runClerkMiddleware = clerkMiddleware(async (auth, request) => {
   const negotiated = negotiateMarkdown(request);
   if (negotiated) {
     return negotiated;
+  }
+
+  const cors = applyCors(request);
+  if (cors) {
+    return cors;
   }
 
   if (isProtectedRoute(request)) {
@@ -60,7 +98,7 @@ export default function middleware(
   }
 
   if (!authEnabled()) {
-    return NextResponse.next();
+    return applyCors(request) ?? NextResponse.next();
   }
 
   return runClerkMiddleware(request, event);
