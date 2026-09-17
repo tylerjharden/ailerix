@@ -80,6 +80,50 @@ function memoryGrantSignupIfNeeded(accountId: string): void {
   }
 }
 
+function memoryAccountByEmail(
+  email: string,
+): MemoryAccount | undefined {
+  const normalized = email.trim().toLowerCase();
+  for (const account of memoryAccountsById.values()) {
+    if (account.email?.trim().toLowerCase() === normalized) {
+      return account;
+    }
+  }
+  return undefined;
+}
+
+export async function ensureAccountByEmail(
+  email: string,
+): Promise<{ id: string; clerkId: string; email: string | null } | null> {
+  const normalized = email.trim().toLowerCase();
+  if (!normalized) {
+    return null;
+  }
+
+  if (!dbAvailable()) {
+    const existing = memoryAccountByEmail(normalized);
+    if (existing) {
+      return existing;
+    }
+    const clerkId = `acp_${createHash("sha256").update(normalized, "utf8").digest("hex").slice(0, 28)}`;
+    return ensureAccount(clerkId, normalized);
+  }
+
+  try {
+    const prisma = getPrismaClient();
+    const byEmail = await prisma.account.findFirst({
+      where: { email: { equals: normalized, mode: "insensitive" } },
+    });
+    if (byEmail) {
+      return byEmail;
+    }
+    const clerkId = `acp_${createHash("sha256").update(normalized, "utf8").digest("hex").slice(0, 28)}`;
+    return ensureAccount(clerkId, normalized);
+  } catch {
+    return null;
+  }
+}
+
 export async function ensureAccount(
   clerkId: string,
   email?: string | null,
@@ -126,6 +170,74 @@ export async function ensureAccount(
     return account;
   } catch {
     return null;
+  }
+}
+
+export type LedgerEntry = {
+  id: string;
+  deltaUsd: number;
+  balanceAfter: number;
+  reason: CreditReason;
+  ref: string | null;
+  createdAt: Date;
+};
+
+export async function hasLedgerRef(ref: string): Promise<boolean> {
+  if (!ref) {
+    return false;
+  }
+  if (!dbAvailable()) {
+    return memoryLedger.some((row) => row.ref === ref);
+  }
+  try {
+    const prisma = getPrismaClient();
+    const row = await prisma.creditLedger.findFirst({
+      where: { ref },
+      select: { id: true },
+    });
+    return row !== null;
+  } catch {
+    return memoryLedger.some((row) => row.ref === ref);
+  }
+}
+
+export async function listLedgerEntries(
+  accountId: string,
+  limit = 50,
+): Promise<LedgerEntry[]> {
+  if (!dbAvailable()) {
+    return memoryLedger
+      .filter((row) => row.accountId === accountId)
+      .slice()
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+      .slice(0, limit)
+      .map((row) => ({
+        id: row.id,
+        deltaUsd: row.deltaUsd,
+        balanceAfter: row.balanceAfter,
+        reason: row.reason,
+        ref: row.ref,
+        createdAt: row.createdAt,
+      }));
+  }
+
+  try {
+    const prisma = getPrismaClient();
+    const rows = await prisma.creditLedger.findMany({
+      where: { accountId },
+      orderBy: { createdAt: "desc" },
+      take: limit,
+    });
+    return rows.map((row) => ({
+      id: row.id,
+      deltaUsd: row.deltaUsd,
+      balanceAfter: row.balanceAfter,
+      reason: row.reason as CreditReason,
+      ref: row.ref,
+      createdAt: row.createdAt,
+    }));
+  } catch {
+    return [];
   }
 }
 
