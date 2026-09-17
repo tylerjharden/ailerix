@@ -1,0 +1,12 @@
+{
+  "name": "ailerix",
+  "description": "Route LLM requests through Ailerix (ailerix/auto) with TypeSafe Jev task-family classification and cost-optimal model selection—no manual model picking.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Ailerix"
+  },
+  "homepage": "https://ailerix.com",
+  "repository": "https://github.com/tylerjharden/ailerix",
+  "license": "MIT",
+  "logo": "assets/logo.svg"
+}

@@ -1,0 +1,13 @@
+{
+  "hooks": {
+    "beforeMCPExecution": [
+      {
+        "command": "scripts/guard-mcp.sh",
+        "matcher": {
+          "mcp_server": "ailerix"
+        },
+        "failClosed": true
+      }
+    ]
+  }
+}

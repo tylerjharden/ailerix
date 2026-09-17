@@ -1,0 +1,8 @@
+{
+  "plugins": [
+    {
+      "name": "ailerix",
+      "source": "cursor-plugin"
+    }
+  ]
+}

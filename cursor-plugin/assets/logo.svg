@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Ailerix">
+  <defs>
+    <linearGradient id="wing" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#0f766e"/>
+      <stop offset="100%" stop-color="#14b8a6"/>
+    </linearGradient>
+  </defs>
+  <rect width="128" height="128" rx="24" fill="#0b1220"/>
+  <path fill="url(#wing)" d="M64 20 L104 108 L84 108 L64 68 L44 108 L24 108 Z"/>
+  <path fill="#5eead4" opacity="0.85" d="M64 36 L88 96 L72 96 L64 76 L56 96 L40 96 Z"/>
+</svg>
