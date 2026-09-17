@@ -771,6 +771,192 @@ grep -RniE "openai/|anthropic/|deepseek/|qwen/|meta-llama/|mistral/|x-ai/" src/a
 npx tsc --noEmit && npm test && npm run build
 ```
 
+---
+
+# G-slice: auth, credits, agent-readiness, MCP work packages
+
+Context for all G packages: routing + execution + analytics are live (Neon Postgres via Prisma; `DATABASE_URL` set). Dependencies preinstalled: `@clerk/nextjs` (v7), `@clerk/mcp-tools`, `mcp-handler`, `@modelcontextprotocol/sdk`, `stripe`, `zod`.
+
+Cross-cutting G guardrails:
+
+- **Auth is optional at runtime.** Central helper `src/lib/auth-config.ts` (created in G1) exports `authEnabled()`. When Clerk keys are absent in production builds, the app renders and routes anonymously — never crash at build or request time for missing `CLERK_*`, `STRIPE_*`, or ACP env. This also powers the Hugging Face demo mode.
+- **Money integrity**: all credit mutations go through `grantCredits` / `debitCredits` in `src/lib/credits.ts` (G2). No endpoint writes `CreditLedger` directly.
+- **Public API discovery routes** (`/.well-known/*`, `/openapi.json`, `/auth.md`, `/llms.txt`, `robots.txt`, `sitemap.xml`) are always public — G1's middleware must never protect them.
+- Provider slugs still never leak on default paths; `aa_id`s fine.
+
+## G1 — Clerk auth + anonymous vs signed-in shell
+
+**Files.** Create `src/middleware.ts`, `src/lib/auth-config.ts`, `src/app/sign-in/[[...sign-in]]/page.tsx`, `src/app/sign-up/[[...sign-up]]/page.tsx`. Modify `src/app/layout.tsx`, `src/components/account-menu.tsx`, `src/app/dashboard/layout.tsx`.
+
+1. `src/lib/auth-config.ts`:
+
+```ts
+export function authEnabled(): boolean {
+  return Boolean(
+    process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY ||
+      process.env.CLERK_SECRET_KEY ||
+      process.env.NODE_ENV === "development", // Clerk Keyless works in dev
+  );
+}
+```
+
+2. `src/middleware.ts`: when `authEnabled()`, run `clerkMiddleware` with `createRouteMatcher` protecting only `/dashboard(.*)` (redirect to sign-in). Everything else — `/`, `/playground`, `/docs`, `/models`, `/api/(.*)`, `/.well-known/(.*)`, `/sign-in`, `/sign-up`, static — stays public. When auth is disabled, export a pass-through middleware. Matcher config must exclude `_next`, static assets. IMPORTANT: structure the middleware so G4 can add a markdown-content-negotiation rewrite step in the same file (a small exported `negotiateMarkdown(request)` placeholder returning `null` is fine).
+3. `src/app/layout.tsx`: wrap in `<ClerkProvider dynamic>` only when `authEnabled()`; keep ThemeProvider nesting.
+4. `src/components/account-menu.tsx`: `<SignedIn>` → real user (`useUser` name/email/avatar) + Sign out via `useClerk().signOut()`; `<SignedOut>` → "Sign in" button linking `/sign-in`. When auth is disabled entirely, keep today's static Operator menu. Keep the theme toggle rows.
+5. Sign-in/up pages: Clerk `<SignIn />` / `<SignUp />` components centered in the site chrome (shadcn Card frame), `appearance` matched to theme.
+6. Dashboard layout: when `authEnabled()` and signed out, middleware already redirects; page header shows the real identity instead of "Operator" when signed in (client `useUser`).
+
+Do not touch `src/app/api/**`, `prisma/**`, or `src/lib/**` other than the new auth-config.
+
+Gate: `npx tsc --noEmit && npm test && npm run build` (build without Clerk keys must succeed), plus dev-server check: `/` 200, `/dashboard` redirects (or renders if keyless dev session machinery allows), `/sign-in` renders.
+
+## G2 — Accounts schema, API keys, credit metering
+
+**Files.** Modify `prisma/schema.prisma`, `src/app/api/v1/chat/completions/route.ts`, `src/app/api/v1/route/route.ts`, `src/lib/execute.ts` (only if needed for debit hook), `src/components/dashboard/*` (API Keys tab), `src/app/dashboard/page.tsx` (wire tab). Create `src/lib/credits.ts`, `src/lib/api-keys.ts`, `src/lib/request-identity.ts`, `src/app/api/v1/key/route.ts`, `src/app/api/keys/route.ts` (session-authed CRUD), `src/lib/credits.test.ts`. Orchestrator runs `prisma db push` after review — do NOT run it yourself; run `npx prisma validate` + `npx prisma generate`.
+
+1. Schema additions (workspace Prisma conventions):
+
+```prisma
+model Account {
+  id        String   @id @default(cuid())
+  clerkId   String   @unique
+  email     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  apiKeys   ApiKey[]
+  ledger    CreditLedger[]
+}
+
+model ApiKey {
+  id         String    @id @default(cuid())
+  accountId  String
+  account    Account   @relation(fields: [accountId], references: [id])
+  name       String
+  keyHash    String    @unique // sha256 of full key
+  prefix     String    // "ailerix_" + first 8 chars, for display
+  disabled   Boolean   @default(false)
+  lastUsedAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  @@index([accountId])
+}
+
+model CreditLedger {
+  id           String   @id @default(cuid())
+  accountId    String
+  account      Account  @relation(fields: [accountId], references: [id])
+  deltaUsd     Float    // + grant, - debit
+  balanceAfter Float
+  reason       String   // "stripe_checkout" | "acp_order" | "usage_debit" | "signup_grant" | "adjustment"
+  ref          String?  // stripe session id / acp checkout id / generationId
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  @@index([accountId, createdAt])
+}
+
+model AnonymousUsage {
+  id        String   @id @default(cuid())
+  anonId    String   // sha256(ip + UTC day)
+  day       String   // YYYY-MM-DD
+  count     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@unique([anonId, day])
+}
+```
+
+Plus nullable `accountId`, `apiKeyId`, `anonId` columns + `@@index([accountId])` on `RouteEvent`.
+
+2. `src/lib/credits.ts`: `grantCredits({accountId, usd, reason, ref})`, `debitCredits({accountId, usd, reason, ref})` (transactional: append ledger row with computed `balanceAfter`), `getBalance(accountId)`, `ensureAccount(clerkId, email?)`. `SIGNUP_GRANT_USD = 1.00` granted on first `ensureAccount`. All no-ops returning null when `!dbAvailable()`.
+3. `src/lib/api-keys.ts`: `createKey(accountId, name)` → returns full key once (`ailerix_` + 32 hex), stores hash; `verifyKey(bearer)` → account or null; `revokeKey`, `listKeys`. Node `crypto`, no new deps.
+4. `src/lib/request-identity.ts`: resolve, in order — `Authorization: Bearer ailerix_…` → account; Clerk session (`auth()` from `@clerk/nextjs/server`, guarded by `authEnabled()`) → account via `ensureAccount`; else anonymous (`anonId` = sha256 of `x-forwarded-for` first hop + UTC day). Returns `{ kind: "key"|"session"|"anon", accountId?, apiKeyId?, anonId? }`.
+5. Metering in `/chat/completions` + `/route`: anonymous → increment `AnonymousUsage` (upsert), cap **25/day**: over → 429 envelope `error_type: "rate_limit_exceeded"`. Account → after execution compute `debit = (estimated_turn_usd ?? 0) * 1.10`; if `getBalance() <= 0` and debit would apply → 402 `{ code: "insufficient_credits", metadata.error_type: "payment_required" }` BEFORE execution (echo-only requests with $0 estimate still pass). Record identity fields on the RouteEvent. API 401 (bad key) responses must include header `WWW-Authenticate: Bearer resource_metadata="https://ailerix.com/.well-known/oauth-protected-resource"`.
+6. `GET /api/v1/key` (OpenRouter parity): bearer key required → `{ data: { label, usage_usd, balance_usd, is_free_tier: balance<=SIGNUP_GRANT, anonymous_daily: null } }`.
+7. `/api/keys` (session-authed JSON CRUD for the dashboard) + dashboard API Keys tab: list/create (show full key once in a dialog)/revoke. Keep 375px sane.
+8. Tests (memory/db-less paths): key create/verify/revoke roundtrip (mock prisma via dbAvailable false → these functions need a memory fallback for tests: use a module-level Map when `!dbAvailable()`), anon cap logic, debit math, 402 shape.
+
+Gate: `npx prisma validate && npx tsc --noEmit && npm test && npm run build`.
+
+## G3 — Stripe credits (human flow)
+
+**Files.** Create `src/lib/stripe.ts`, `src/app/api/stripe/checkout/route.ts`, `src/app/api/stripe/webhook/route.ts`, `src/components/dashboard/credits-panel.tsx`. Modify `src/app/dashboard/page.tsx` (Credits tab), `.env.example`.
+
+1. `src/lib/stripe.ts`: lazy Stripe client; `stripeEnabled()` = `!!process.env.STRIPE_SECRET_KEY`. Credit packs constant: `[{id:"CREDITS-5", usd:5},{id:"CREDITS-20", usd:20},{id:"CREDITS-100", usd:100}]` — single source, exported (G5 ACP reuses it).
+2. `POST /api/stripe/checkout` (session-authed): body `{ pack }` → Checkout Session, `mode: "payment"`, inline `price_data` (no pre-created products), `metadata: { accountId, pack }`, success/cancel URLs → `/dashboard?tab=credits&status=…`. 503 `stripe_not_configured` when disabled.
+3. `POST /api/stripe/webhook`: raw-body `constructEvent` with `STRIPE_WEBHOOK_SECRET`; on `checkout.session.completed` → `grantCredits({reason:"stripe_checkout", ref: session.id})`, idempotent on `ref` (skip if a ledger row with that ref exists).
+4. Credits panel: balance (big number), three pack buttons (disabled with tooltip when Stripe unconfigured), ledger table (reason, delta, balance, time), empty/loading states.
+5. `.env.example`: `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `NEXT_PUBLIC_APP_URL`, Clerk keys documented.
+
+Gate: `npx tsc --noEmit && npm test && npm run build`; grep: no `sk_live`/`sk_test` literals.
+
+## G4 — Agent-readiness surface
+
+**Files.** Create `src/app/robots.ts`, `src/app/sitemap.ts`, `public/llms.txt`, `public/auth.md`, `public/openapi.json`, `public/.well-known/api-catalog`, `public/.well-known/mcp/server-card.json`, `public/.well-known/agent-card.json`, `public/.well-known/agent-skills/index.json`, `public/.well-known/ai-catalog.json`, `src/app/md/[slug]/route.ts`. Modify `next.config.ts` (Link + content-type headers), `src/middleware.ts` (markdown negotiation step only).
+
+1. `robots.ts`: allow all; explicit `User-agent` allows for GPTBot, ClaudeBot, PerplexityBot, Google-Extended, CCBot, OAI-SearchBot; sitemap URL. Append raw lines `Content-Signal: ai-train=yes, search=yes, ai-input=yes` — Next's robots API can't emit custom directives, so use a `public/robots.txt`-style static ROUTE (`src/app/robots.txt/route.ts` returning text) instead of `robots.ts` if needed for the Content-Signal line. Sitemap via `src/app/sitemap.ts` (all public pages).
+2. Markdown negotiation: in middleware, if `Accept` includes `text/markdown` and pathname ∈ {`/`, `/docs`, `/models`, `/playground`, `/dashboard`}, rewrite to `/md/{slug}`; `src/app/md/[slug]/route.ts` returns hand-authored Markdown summaries (`Content-Type: text/markdown; charset=utf-8`) — real content, not lorem: product thesis, API usage with `ailerix/auto`, families, links. `/llms.txt`: index of those markdown URLs + docs links.
+3. `public/openapi.json`: OpenAPI 3.1 for `/api/v1/chat/completions`, `/route`, `/systemone`, `/models`, `/generation`, `/analytics/summary`, `/key` — accurate schemas incl. the `model_not_allowed` 400 and 402. Keep it hand-written and truthful.
+4. `next.config.ts` headers: on `/` add `Link: </.well-known/api-catalog>; rel="api-catalog", </openapi.json>; rel="service-desc"`; correct `Content-Type` for `/.well-known/api-catalog` (`application/linkset+json`).
+5. Well-known JSON (all static, all referencing https://ailerix.com):
+   - `api-catalog`: RFC 9727 linkset — anchor `https://ailerix.com/api/v1`, `service-desc` → `/openapi.json`, `service-doc` → `/docs`.
+   - `mcp/server-card.json`: `$schema` `https://static.modelcontextprotocol.io/schemas/mcp-server-card/v1.json`, `protocolVersion: "2026-07-28"`, serverInfo `ailerix`, transport `{type:"streamable-http", endpoint:"https://ailerix.com/api/mcp"}`, `authentication: {type:"oauth2", resource_metadata:"https://ailerix.com/.well-known/oauth-protected-resource"}`, tools: `route_preview`, `create_completion`, `get_generation`, `analytics_summary`, `credit_balance`, `buy_credits` (concise input schemas — must match G6).
+   - `agent-card.json` (A2A): name/description/version, service URL `https://ailerix.com/api/mcp`, capabilities, skills (route/complete/top-up).
+   - `agent-skills/index.json`: three skills (route-a-completion, check-credits, top-up-credits) with `url` pointing at `/auth.md` + docs anchors.
+   - `ai-catalog.json` (ARD): `specVersion`, host block, entries referencing the server card, agent card, skills index, acp.json by URL with proper media types.
+6. `public/auth.md`: plain-language agent onboarding — anonymous tier (25/day), API keys via dashboard, OAuth for MCP (Clerk), 402 semantics, credit packs, ACP checkout pointer.
+7. Do NOT create `/.well-known/oauth-protected-resource` (G6 owns it, dynamic).
+
+Gate: `npx tsc --noEmit && npm run build`; `curl -H "Accept: text/markdown" /` returns markdown; every listed static file parses (`jq`) and every URL inside them is absolute https://ailerix.com.
+
+## G5 — ACP agentic commerce
+
+**Files.** Create `src/lib/acp.ts`, `src/app/api/acp/checkout_sessions/route.ts`, `src/app/api/acp/checkout_sessions/[id]/route.ts`, `.../[id]/complete/route.ts`, `.../[id]/cancel/route.ts`, `public/.well-known/acp.json`, `public/acp-feed.jsonl`, `src/app/api/acp/acp.test.ts`. Reuses `CREDIT_PACKS` from `src/lib/stripe.ts`, `grantCredits` from `src/lib/credits.ts`.
+
+1. `acp.json`: `{"protocol":{"name":"acp","version":"2026-04-17"},"api_base_url":"https://ailerix.com/api/acp","transports":["http"],"capabilities":{"services":["checkout"]}}` (exact types — services is an array of strings).
+2. `acp-feed.jsonl`: one line per pack — `item_id` (`CREDITS-5` etc.), `title`, `description`, `url` (`https://ailerix.com/dashboard?tab=credits`), `brand: "Ailerix"`, `seller_name`, `image_url` (logo), `availability: "in_stock"`, `price: "5.00 USD"`, `is_digital: true`, `is_eligible_checkout: true`, `seller_tos`/`seller_privacy_policy` URLs.
+3. Session store: new Prisma model NOT required — persist as `AcpCheckoutSession` rows? Keep it simple: a Prisma model `AcpSession { id, status, itemsJson, buyerJson, totalMinor, currency, orderId?, createdAt, updatedAt }` added to the schema (orchestrator pushes). Memory fallback map when `!dbAvailable()`.
+4. Endpoints per spec: create (201, `status: "ready_for_payment"` immediately — digital, no address needed; `payment_provider: {provider:"stripe", supported_payment_methods:["card"]}`; line_items with integer minor units; `fulfillment_options: [{type:"digital", id:"digital", title:"Instant credit grant", subtotal:"0", tax:"0", total:"0"}]`; `totals[]`; `links[]` to ToS/privacy), update, get (404 unknown), cancel (405 if completed), complete: verify session, extract SPT from `payment_data.token` (support both flat and 2026-01-30 handler shape), if `stripeEnabled()` → `stripe.paymentIntents.create({amount, currency, confirm: true, shared_payment_granted_token: token}, {apiVersion header via stripeVersion option "2026-04-22.preview"})`; grant credits keyed by `buyer.email` (ensure account by email — `ensureAccountByEmail` helper added to credits.ts), `status:"completed"` + `order {id, checkout_session_id, permalink_url: https://ailerix.com/orders/{id}}`. Stripe disabled → `messages:[{type:"error", code:"payment_declined", …}]`.
+5. Headers: echo `Idempotency-Key` + `Request-Id`; idempotent create on `Idempotency-Key` (reuse stored response); ignore `Signature` verification when `ACP_SIGNING_KEY` unset (verify HMAC when set).
+6. Order webhook emission: if `ACP_ORDER_WEBHOOK_URL` set, POST `order_created` then `order_updated` (`fulfilled`) with HMAC header when `ACP_WEBHOOK_SECRET` set; fire-and-forget.
+7. Tests: create→get→update→complete lifecycle in memory mode (Stripe disabled path asserts declined message; a fake stripe client via dependency injection asserts SPT param passed), cancel-after-complete 405, idempotent create.
+
+Gate: `npx prisma validate && npx tsc --noEmit && npm test && npm run build`.
+
+## G6 — OAuth MCP server (Clerk as AS)
+
+**Files.** Create `src/app/api/mcp/[transport]/route.ts` (mcp-handler convention), `src/app/.well-known/oauth-protected-resource/route.ts`, `src/lib/mcp-tools.ts`, `src/lib/mcp.test.ts`. Modify `.env.example` only.
+
+1. Use `createMcpHandler` from `mcp-handler`. Tools (zod schemas), thin wrappers over existing libs (import, don't re-implement):
+   - `route_preview({ prompt, policy? })` → routeRequest result (family, aa_id, cost_per_task, reasons)
+   - `create_completion({ prompt, policy? })` → executes via the same path as /chat/completions (non-stream), returns content + ailerix trace
+   - `get_generation({ generation_id })` → store lookup (public shape)
+   - `analytics_summary({ days? })` → summarize()
+   - `credit_balance({})` → for the authed account (OAuth token → Clerk user → account), or `{anonymous: true}` when auth disabled
+   - `buy_credits({ pack })` → returns `{ checkout_url }` via Stripe checkout (or `stripe_not_configured`)
+2. Auth wrapping: when `authEnabled()` and `CLERK_SECRET_KEY` present, wrap with `experimental_withMcpAuth`-style verification using `verifyClerkToken` from `@clerk/mcp-tools/next` (follow that package's documented Next.js pattern; read its README in node_modules). Token audience/resource validation before tool dispatch. When auth is disabled (demo/HF), serve tools 1–4 unauthenticated and 5–6 return a `sign_in_required` message.
+3. `/.well-known/oauth-protected-resource`: use `protectedResourceHandlerClerk` from `@clerk/mcp-tools/next` when Clerk configured (authorization server = Clerk instance domain); else a static JSON `{resource:"https://ailerix.com", authorization_servers:[]}`.
+4. `.env.example`: note Clerk OAuth: enable Dynamic Client Registration (or CIMD) in the Clerk dashboard; register Cursor redirect URLs `https://www.cursor.com/agents/mcp/oauth/callback` and `http://localhost:8787/callback`.
+5. Tests: tool registry lists 6 tools; route_preview returns a valid family on the fixture (memory mode, auth disabled).
+
+Gate: `npx tsc --noEmit && npm test && npm run build`; live: `curl -X POST http://127.0.0.1:43147/api/mcp -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'` returns the tool list (auth-disabled mode).
+
+## G7 — Cursor Marketplace plugin
+
+**Files.** Create under `cursor-plugin/`: `.cursor-plugin/plugin.json`, `mcp.json`, `skills/ailerix-routing/SKILL.md`, `skills/ailerix-credits/SKILL.md`, `agents/jev-router.md`, `hooks/hooks.json`, `assets/logo.svg`, `README.md`. Also repo-root `.cursor-plugin/marketplace.json` listing the plugin with `source: "cursor-plugin"`.
+
+- `plugin.json`: name `ailerix`, description, version `0.1.0`, author, homepage `https://ailerix.com`, repository, license MIT, logo relative path.
+- `mcp.json`: `{"mcpServers": {"ailerix": {"url": "https://ailerix.com/api/mcp"}}}` (Cursor drives OAuth via DCR/CIMD).
+- Skills: frontmatter `name` matching folder + `description` stating what AND when ("Use when the user wants to route an LLM request without picking a model…"). Routing skill: ailerix/auto contract, policy hints, families, `model_not_allowed` gotcha, MCP tools available. Credits skill: balance/topup/402 semantics, ACP note.
+- `agents/jev-router.md`: frontmatter name/description ("Consult Ailerix for a typed routing decision before long LLM tasks; use proactively when choosing how to process a prompt"), body: call `route_preview`, interpret family/floor, then act.
+- `hooks/hooks.json`: `beforeMCPExecution` matcher for the ailerix server with a fail-closed script `scripts/guard-mcp.sh` that allows known tool names and denies others (exit 2).
+- README: install (marketplace + local `~/.cursor/plugins/local/ailerix`), configuration, OAuth notes.
+
+Gate: `jq` parses every JSON; skill frontmatter names match folders; no absolute paths in manifests.
+
+## G8 — Hugging Face Space (orchestrator, direct)
+
+Docker-SDK Space `tylerjharden/ailerix` on cpu-basic: `Dockerfile` (multi-stage: `node:22-alpine`, `npm ci && npm run build`, `next start -p 7860`), Space README frontmatter (`sdk: docker`, `app_port: 7860`), demo mode = no secrets (auth disabled path from G1, memory analytics, echo execution). Push via `hf` CLI upload from a scratch dir containing the repo (no `.env`).
+
 ## Orchestrator prompt template
 
 Each dispatch sends exactly:
