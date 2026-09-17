@@ -121,10 +121,10 @@ function StaticOperatorMenu() {
         >
           <Avatar className="size-7">
             <AvatarFallback className="bg-primary/10 text-xs text-primary">
-              OP
+              ?
             </AvatarFallback>
           </Avatar>
-          <span className="hidden text-primary sm:inline">Operator</span>
+          <span className="hidden text-primary sm:inline">Demo mode</span>
           <ChevronDown className="size-4 text-muted-foreground" />
         </Button>
       </DropdownMenuTrigger>
@@ -137,9 +137,9 @@ function StaticOperatorMenu() {
               </AvatarFallback>
             </Avatar>
             <div className="flex flex-col">
-              <span className="text-sm font-medium text-primary">Operator</span>
+              <span className="text-sm font-medium text-primary">Demo mode</span>
               <span className="text-xs text-muted-foreground">
-                operator@ailerix.com
+                Sign-in not configured
               </span>
             </div>
           </div>
