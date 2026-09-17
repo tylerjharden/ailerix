@@ -21,6 +21,9 @@ export function GET(request: Request) {
     {
       resource: "https://ailerix.com",
       authorization_servers: fallbackAs ? [`https://${fallbackAs}`] : [],
+      scopes_supported: ["openid", "profile", "email"],
+      bearer_methods_supported: ["header"],
+      resource_documentation: "https://ailerix.com/auth.md",
     },
     {
       headers: {
