@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { TASK_FAMILIES, isTaskFamily } from "@/lib/families";
 import {
   evaluateLocal,
+  normalizeRemoteAnswers,
   routingQuestions,
   type Answer,
 } from "@/lib/system-one";
@@ -151,6 +152,52 @@ describe("evaluateLocal routingQuestions (balanced)", () => {
         expect(isTaskFamily(family.choice)).toBe(true);
         expect(TASK_FAMILIES).toContain(family.choice);
       }
+    }
+  });
+});
+
+describe("normalizeRemoteAnswers (live Jev payload shapes)", () => {
+  it("converts index-keyed legend/probabilities objects to arrays and fills confidence", () => {
+    const questions = routingQuestions("balanced");
+    const raw = {
+      quality_floor: {
+        type: "score",
+        score: 1.1,
+        confidence: 0.57,
+        legend: { "0": "Trivial", "1": "Standard", "2": "Hard", "3": "Frontier" },
+        probabilities: { "0": 0.16, "1": 0.58, "2": 0.25, "3": 0.01 },
+      },
+      needs_vision: { type: "noul", noul: 0.3 },
+      task_family: {
+        type: "choice",
+        choice: "coding",
+        probabilities: { coding: 0.9, intelligence: 0.1 },
+      },
+    };
+
+    const answers = normalizeRemoteAnswers(questions, raw);
+
+    const score = answers.quality_floor;
+    if (score.type !== "score") throw new Error("expected score");
+    expect(Array.isArray(score.legend)).toBe(true);
+    expect(score.legend.join(" → ")).toContain("Trivial");
+    expect(score.probabilities).toEqual([0.16, 0.58, 0.25, 0.01]);
+    expect(score.confidence).toBe(0.57);
+
+    const noul = answers.needs_vision;
+    if (noul.type !== "noul") throw new Error("expected noul");
+    expect(noul.noul).toBe(0.3);
+    expect(noul.confidence).toBeGreaterThan(0);
+    expect(noul.confidence).toBeLessThanOrEqual(1);
+
+    const choice = answers.task_family;
+    if (choice.type !== "choice") throw new Error("expected choice");
+    expect(choice.choice).toBe("coding");
+    expect(choice.confidence).toBeGreaterThan(0.5);
+
+    // Every question id gets a typed answer even when the API omits it.
+    for (const id of Object.keys(questions)) {
+      expect(answers[id]).toBeDefined();
     }
   });
 });

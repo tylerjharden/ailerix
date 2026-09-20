@@ -124,7 +124,9 @@ function AnswerCard({ id, answer }: { id: string; answer: Answer }) {
           </CardHeader>
           <CardContent className="space-y-2 text-xs text-muted-foreground">
             <p>Confidence {(answer.confidence * 100).toFixed(0)}%</p>
-            <p>{answer.legend.join(" → ")}</p>
+            <p>
+              {Array.isArray(answer.legend) ? answer.legend.join(" → ") : ""}
+            </p>
           </CardContent>
         </Card>
       );

@@ -57,7 +57,8 @@ export type SystemOneRequest = {
 export type DecisionEngine = "jev" | "ailerix-local";
 
 export type SystemOneResponse = {
-  model: SystemOneModel;
+  /** Resolved engine version, e.g. "jev-1.13.0" from the live API. */
+  model: string;
   engine: DecisionEngine;
   latency_ms: number;
   answers: Record<string, Answer>;
@@ -444,15 +445,15 @@ export async function evaluateSystemOne(
     }
 
     const payload = (await response.json()) as {
-      answers: Record<string, Answer>;
-      model?: SystemOneModel;
+      answers: Record<string, unknown>;
+      model?: string;
     };
 
     return {
       model: payload.model ?? "jev-latest",
       engine: "jev",
       latency_ms: Date.now() - started,
-      answers: payload.answers,
+      answers: normalizeRemoteAnswers(request.questions, payload.answers),
     };
   }
 
@@ -588,6 +589,113 @@ export function routingQuestions(
         "Does this request depend on a long document or many files?",
     },
   };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** Live Jev returns index-keyed objects where the local engine uses arrays. */
+function toIndexedArray(value: unknown): unknown[] | null {
+  if (Array.isArray(value)) return value;
+  if (isRecord(value)) {
+    return Object.keys(value)
+      .sort((a, b) => Number(a) - Number(b))
+      .map((key) => value[key]);
+  }
+  return null;
+}
+
+function toNumber(value: unknown, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+/**
+ * The live TypeSafe Jev API differs from our local engine in small ways:
+ * `legend`/`probabilities` arrive as `{"0": …}` objects, `confidence` may be
+ * omitted, and extra fields may appear. Normalize every answer to the typed
+ * shapes the router and UI rely on. Unknown or malformed answers fall back to
+ * conservative defaults instead of crashing downstream renders.
+ */
+export function normalizeRemoteAnswers(
+  questions: Record<string, Question>,
+  raw: Record<string, unknown> | undefined,
+): Record<string, Answer> {
+  const answers: Record<string, Answer> = {};
+
+  for (const [id, question] of Object.entries(questions)) {
+    const value = raw?.[id];
+    const record = isRecord(value) ? value : {};
+
+    switch (question.type) {
+      case "choice": {
+        const probabilities: Record<string, number> = {};
+        if (isRecord(record.probabilities)) {
+          for (const [key, p] of Object.entries(record.probabilities)) {
+            if (typeof p === "number" && Number.isFinite(p)) {
+              probabilities[key] = p;
+            }
+          }
+        }
+        const keys = Object.keys(question.criteria);
+        const choice =
+          typeof record.choice === "string" && record.choice.length > 0
+            ? record.choice
+            : (Object.entries(probabilities).sort((a, b) => b[1] - a[1])[0]?.[0] ??
+              keys[0] ??
+              "");
+        const peak = probabilities[choice] ?? 0;
+        answers[id] = {
+          type: "choice",
+          choice,
+          probabilities,
+          confidence: clamp01(
+            toNumber(record.confidence, clamp01(0.52 + peak * 0.42)),
+          ),
+        };
+        break;
+      }
+      case "score": {
+        const legendRaw = toIndexedArray(record.legend);
+        const legend =
+          legendRaw && legendRaw.length > 0
+            ? legendRaw.map((item) => String(item))
+            : [...question.criteria];
+        const probabilitiesRaw = toIndexedArray(record.probabilities) ?? [];
+        const probabilities = legend.map((_, index) =>
+          toNumber(probabilitiesRaw[index], 0),
+        );
+        const peak = Math.max(0, ...probabilities);
+        answers[id] = {
+          type: "score",
+          score: toNumber(record.score, 0),
+          legend,
+          probabilities,
+          confidence: clamp01(
+            toNumber(record.confidence, clamp01(0.5 + peak * 0.45)),
+          ),
+        };
+        break;
+      }
+      case "noul": {
+        const noul = clamp01(toNumber(record.noul, 0));
+        answers[id] = {
+          type: "noul",
+          noul,
+          confidence: clamp01(
+            toNumber(record.confidence, clamp01(0.58 + Math.abs(noul - 0.5) * 0.7)),
+          ),
+        };
+        break;
+      }
+      default: {
+        const _exhaustive: never = question;
+        throw new Error(`Unhandled question type: ${JSON.stringify(_exhaustive)}`);
+      }
+    }
+  }
+
+  return answers;
 }
 
 export function assertAnswerType<T extends Answer["type"]>(
